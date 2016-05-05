@@ -3,7 +3,6 @@ package com.brugnolo.cameraapp;
 import android.Manifest;
 import android.content.Context;
 import android.content.pm.PackageManager;
-import android.graphics.ImageFormat;
 import android.graphics.SurfaceTexture;
 import android.hardware.camera2.CameraAccessException;
 import android.hardware.camera2.CameraCaptureSession;
@@ -11,20 +10,23 @@ import android.hardware.camera2.CameraCaptureSession.CaptureCallback;
 import android.hardware.camera2.CameraCharacteristics;
 import android.hardware.camera2.CameraDevice;
 import android.hardware.camera2.CameraManager;
+import android.hardware.camera2.CaptureFailure;
 import android.hardware.camera2.CaptureRequest;
+import android.hardware.camera2.CaptureResult;
+import android.hardware.camera2.TotalCaptureResult;
 import android.hardware.camera2.params.StreamConfigurationMap;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.HandlerThread;
 import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.Toolbar;
-import android.util.Log;
 import android.util.Size;
 import android.view.Surface;
-import android.view.SurfaceHolder;
-import android.view.SurfaceView;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.TextureView;
+import android.view.View;
 import android.widget.Toast;
 
 import java.util.ArrayList;
@@ -35,13 +37,54 @@ import java.util.List;
 
 public class MainActivity extends AppCompatActivity {
 
+    private static final int STATE_PREVIEW = 0;
+    private static final int STATE_WAIT_LOCK = 1;
+    private int mstate = 0;
+    private int i = 0;
     private CaptureRequest previewCaptureRequest;
     private CaptureRequest.Builder builder;
     private CameraCaptureSession captureSession;
-    private CaptureCallback sessionCallback = new CaptureCallback(){
+    private CaptureCallback sessionCallback = new CaptureCallback() {
+        private void process(CaptureResult result) {
+
+            switch (mstate) {
+
+                case STATE_PREVIEW:
+                    break;
+                case STATE_WAIT_LOCK:
+                    Integer autoFocusState = result.get(CaptureResult.CONTROL_AF_STATE);
+                    Toast.makeText(getApplicationContext(), "focus state ="+autoFocusState, Toast.LENGTH_SHORT).show();
+                    switch(autoFocusState){
+                        case CaptureResult.CONTROL_AF_STATE_PASSIVE_SCAN:
+                            //TODO: my phone is always in this case, idk why yet, will need to test if i can take photos like this
+                            Toast.makeText(getApplicationContext(), "locking focus", Toast.LENGTH_SHORT).show();
+                            unlockFocus();
+                            break;
+
+                        case CaptureResult.CONTROL_AF_STATE_FOCUSED_LOCKED:
+                            Toast.makeText(getApplicationContext(), "got focus lock", Toast.LENGTH_SHORT).show();
+                            unlockFocus();
+                            break;
+                    }
+                    break;
+            }
+        }
+
         @Override
         public void onCaptureStarted(CameraCaptureSession session, CaptureRequest request, long timestamp, long frameNumber) {
             super.onCaptureStarted(session, request, timestamp, frameNumber);
+        }
+
+        @Override
+        public void onCaptureCompleted(CameraCaptureSession session, CaptureRequest request, TotalCaptureResult result) {
+
+            process(result);
+        }
+
+        @Override
+        public void onCaptureFailed(CameraCaptureSession session, CaptureRequest request, CaptureFailure failure) {
+            super.onCaptureFailed(session, request, failure);
+            Toast.makeText(getApplicationContext(), "Capture failed", Toast.LENGTH_SHORT).show();
         }
     };
     private TextureView preview;
@@ -77,7 +120,7 @@ public class MainActivity extends AppCompatActivity {
                 public void onOpened(CameraDevice camera) {
                     device = camera;
                     createCameraPreviewSession();
-                    Toast.makeText(getApplicationContext(), "succesfully opened", Toast.LENGTH_LONG).show();
+                    //Toast.makeText(getApplicationContext(), "succesfully opened", Toast.LENGTH_LONG).show();
                 }
 
                 @Override
@@ -90,16 +133,8 @@ public class MainActivity extends AppCompatActivity {
                     release(camera);
                 }
             };
-
-    @Override
-    public void onResume() {
-        super.onResume();
-        if (preview.isAvailable()) {
-
-        } else {
-            preview.setSurfaceTextureListener(previewListener);
-        }
-    }
+    private HandlerThread backgroundThread;
+    private Handler backgroundHandler;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -109,6 +144,29 @@ public class MainActivity extends AppCompatActivity {
         setSupportActionBar(toolbar);
         preview = (TextureView) findViewById(R.id.previewView);
     }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        openBackgroundThread();
+        if (preview.isAvailable()) {
+
+            setUpCamera(previewSize.getWidth(), previewSize.getHeight());
+            openCamera();
+        } else {
+            preview.setSurfaceTextureListener(previewListener);
+        }
+
+
+    }
+
+    @Override
+    public void onPause() {
+        closeCamera();
+        closeBackgroundThread();
+        super.onPause();
+    }
+
 
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
@@ -198,9 +256,20 @@ public class MainActivity extends AppCompatActivity {
                 Toast.makeText(getApplicationContext(), "not succesfully opened", Toast.LENGTH_LONG).show();
                 return;
             }
-            manager.openCamera(cameraID, callback, null);
+            manager.openCamera(cameraID, callback, backgroundHandler);
         } catch (CameraAccessException e) {
             e.printStackTrace();
+        }
+    }
+
+    private void closeCamera() {
+        if (captureSession != null) {
+            captureSession.close();
+            captureSession = null;
+        }
+        if (device != null) {
+            device.close();
+            device = null;
         }
     }
 
@@ -213,9 +282,10 @@ public class MainActivity extends AppCompatActivity {
         camera.close();
         camera = null;
     }
-    private void createCameraPreviewSession(){
+
+    private void createCameraPreviewSession() {
         SurfaceTexture surfaceSettings = preview.getSurfaceTexture();
-        surfaceSettings.setDefaultBufferSize(previewSize.getWidth(),previewSize.getHeight());
+        surfaceSettings.setDefaultBufferSize(previewSize.getWidth(), previewSize.getHeight());
         Surface previewSurface = new Surface(surfaceSettings);
         try {
             builder = device.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
@@ -224,14 +294,14 @@ public class MainActivity extends AppCompatActivity {
                     new CameraCaptureSession.StateCallback() {
                         @Override
                         public void onConfigured(CameraCaptureSession session) {
-                            if(device==null){
+                            if (device == null) {
                                 return;
                                 //TODO : make it better
                             }
                             previewCaptureRequest = builder.build();
                             captureSession = session;
                             try {
-                                captureSession.setRepeatingRequest(previewCaptureRequest, sessionCallback, null);
+                                captureSession.setRepeatingRequest(previewCaptureRequest, null, backgroundHandler);
                             } catch (CameraAccessException e) {
                                 e.printStackTrace();
                             }
@@ -245,5 +315,48 @@ public class MainActivity extends AppCompatActivity {
         } catch (CameraAccessException e) {
             e.printStackTrace();
         }
+    }
+
+    private void openBackgroundThread() {
+        backgroundThread = new HandlerThread("Camera2 background thread");
+        backgroundThread.start();
+        backgroundHandler = new Handler(backgroundThread.getLooper());
+    }
+
+    private void closeBackgroundThread() {
+        backgroundThread.quitSafely();
+        try {
+            backgroundThread.join();
+            backgroundThread = null;
+            backgroundHandler = null;
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void lockFocus() {
+        try {
+            mstate = STATE_WAIT_LOCK;
+            builder.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_START);
+            captureSession.capture(builder.build(), sessionCallback, backgroundHandler);
+        } catch (CameraAccessException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void unlockFocus() {
+        try {
+            mstate = STATE_PREVIEW;
+            builder.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_CANCEL);
+            captureSession.capture(builder.build(), sessionCallback, backgroundHandler);
+            Toast.makeText(getApplicationContext(), "focus unlocked", Toast.LENGTH_SHORT).show();
+
+        } catch (CameraAccessException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public void takePhoto(View view) {
+        lockFocus();
     }
 }
