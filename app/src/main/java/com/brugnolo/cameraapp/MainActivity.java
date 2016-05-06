@@ -36,6 +36,7 @@ import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.Toolbar;
 import android.util.Size;
 import android.util.SparseIntArray;
+import android.view.OrientationEventListener;
 import android.view.Surface;
 import android.view.Menu;
 import android.view.MenuItem;
@@ -58,20 +59,20 @@ import java.util.List;
 
 public class MainActivity extends AppCompatActivity {
 
+    private OrientationEventListener orientationListener;
     private static final SparseIntArray ORIENTATIONS = new SparseIntArray();
 
     static {
-        ORIENTATIONS.append(Surface.ROTATION_0, 270);
-        ORIENTATIONS.append(Surface.ROTATION_90, 180);
-        ORIENTATIONS.append(Surface.ROTATION_180, 90);
-        ORIENTATIONS.append(Surface.ROTATION_270, 0);
+        ORIENTATIONS.append(Surface.ROTATION_0, 90);
+        ORIENTATIONS.append(Surface.ROTATION_90, 0);
+        ORIENTATIONS.append(Surface.ROTATION_180, 270);
+        ORIENTATIONS.append(Surface.ROTATION_270, 180);
     }
 
-    private static boolean swappedDimensions = false;
+    private static int screenRotation;
     private static final int STATE_PREVIEW = 0;
     private static final int STATE_WAIT_LOCK = 1;
     private int mstate = 0;
-    private int i = 0;
     private CaptureRequest previewCaptureRequest;
     private CaptureRequest.Builder builder;
     private CameraCaptureSession captureSession;
@@ -192,11 +193,18 @@ public class MainActivity extends AppCompatActivity {
             byteBuffer.get(imageBytes);
             Bitmap imageAsBitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.length);
             final Matrix rotationMatrix = new Matrix();
-            if(swappedDimensions) {
-                rotationMatrix.setRotate(180);
-            } else{
-                rotationMatrix.setRotate(90);
-
+            switch (screenRotation){
+                case Surface.ROTATION_0:
+                    rotationMatrix.setRotate(90);
+                    break;
+                //reverse landscape
+                case Surface.ROTATION_90:
+                    rotationMatrix.setRotate(0);
+                    break;
+                //normal landscape
+                case Surface.ROTATION_270:
+                    rotationMatrix.setRotate(180);
+                    break;
             }
             Bitmap rotatedBitmap = Bitmap.createBitmap(imageAsBitmap, 0, 0, imageAsBitmap.getWidth(), imageAsBitmap.getHeight(), rotationMatrix, false);
             FileOutputStream outputStream = null;
@@ -237,7 +245,6 @@ public class MainActivity extends AppCompatActivity {
         openBackgroundThread();
         //if we're on landscape we rotate the textureview
         if (getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE) {
-            swappedDimensions = true;
             final Matrix rotationMatrix = new Matrix();
             rotationMatrix.setRotate(90);
             preview.setTransform(rotationMatrix);
@@ -284,11 +291,6 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void setUpCamera(int width, int height) {
-        if (swappedDimensions) {
-            int support = width;
-            width = height;
-            height = support;
-        }
         CameraManager manager = (CameraManager) getSystemService(Context.CAMERA_SERVICE);
         try {
             for (String camera : manager.getCameraIdList()) {
@@ -517,6 +519,7 @@ public class MainActivity extends AppCompatActivity {
                             unlockFocus();
                         }
                     };
+            screenRotation = this.getWindowManager().getDefaultDisplay().getRotation();
             captureSession.capture(captureStillBuilder.build(),
                     captureCallback,
                     null);
@@ -541,6 +544,7 @@ public class MainActivity extends AppCompatActivity {
                     (float) viewHeight / previewSize.getHeight(),
                     (float) viewWidth / previewSize.getWidth());
             matrix.postScale(scale, scale, centerX, centerY);
+
             matrix.postRotate(90 * (rotation - 2), centerX, centerY);
         } else if (Surface.ROTATION_180 == rotation) {
             matrix.postRotate(180, centerX, centerY);
