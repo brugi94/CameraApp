@@ -1,3 +1,4 @@
+//Aggiungo commenti per familiarizzare con git per Android Studio
 package com.brugnolo.cameraapp;
 
 import android.Manifest;
@@ -102,12 +103,19 @@ public class MainActivity extends AppCompatActivity {
     }
 
     @Override
+    public void onPause(){
+        super.onPause();
+        //Toast.makeText(getApplicationContext(),"onPause",Toast.LENGTH_SHORT).show();
+    }
+
+    @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
         setSupportActionBar(toolbar);
         preview = (TextureView) findViewById(R.id.previewView);
+        Toast.makeText(getApplicationContext(),"onCreate",Toast.LENGTH_SHORT).show();
     }
 
     @Override
