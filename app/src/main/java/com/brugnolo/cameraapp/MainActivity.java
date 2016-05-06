@@ -91,9 +91,32 @@ public class MainActivity extends AppCompatActivity {
                 }
             };
 
+
+    @Override
+    public void onStop(){
+        super.onStop();
+        Log.e("Luca_Debug", "onStop");
+    }
+
+    @Override
+    public void onDestroy(){
+        super.onDestroy();
+        Log.e("Luca_Debug", "onDestroy");
+    }
+
+
+
+    @Override
+    public void onPause(){
+        super.onPause();
+        Log.e("Luca_Debug", "onPause");
+    }
+
+
     @Override
     public void onResume() {
         super.onResume();
+        Log.e("Luca_Debug","onResume");
         if (preview.isAvailable()) {
 
         } else {
@@ -108,6 +131,7 @@ public class MainActivity extends AppCompatActivity {
         Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
         setSupportActionBar(toolbar);
         preview = (TextureView) findViewById(R.id.previewView);
+        Log.e("Luca_Debug","onCreate");
     }
 
     @Override
