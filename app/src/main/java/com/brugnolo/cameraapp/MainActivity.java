@@ -1,8 +1,16 @@
 package com.brugnolo.cameraapp;
 
 import android.Manifest;
+import android.app.Activity;
 import android.content.Context;
+import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.content.res.Configuration;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.ImageFormat;
+import android.graphics.Matrix;
+import android.graphics.RectF;
 import android.graphics.SurfaceTexture;
 import android.hardware.camera2.CameraAccessException;
 import android.hardware.camera2.CameraCaptureSession;
@@ -15,13 +23,19 @@ import android.hardware.camera2.CaptureRequest;
 import android.hardware.camera2.CaptureResult;
 import android.hardware.camera2.TotalCaptureResult;
 import android.hardware.camera2.params.StreamConfigurationMap;
+import android.media.Image;
+import android.media.ImageReader;
+import android.media.MediaScannerConnection;
+import android.net.Uri;
 import android.os.Bundle;
+import android.os.Environment;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.Toolbar;
 import android.util.Size;
+import android.util.SparseIntArray;
 import android.view.Surface;
 import android.view.Menu;
 import android.view.MenuItem;
@@ -29,14 +43,31 @@ import android.view.TextureView;
 import android.view.View;
 import android.widget.Toast;
 
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.Date;
 import java.util.List;
 
 public class MainActivity extends AppCompatActivity {
 
+    private static final SparseIntArray ORIENTATIONS = new SparseIntArray();
+
+    static {
+        ORIENTATIONS.append(Surface.ROTATION_0, 270);
+        ORIENTATIONS.append(Surface.ROTATION_90, 180);
+        ORIENTATIONS.append(Surface.ROTATION_180, 90);
+        ORIENTATIONS.append(Surface.ROTATION_270, 0);
+    }
+
+    private static boolean swappedDimensions = false;
     private static final int STATE_PREVIEW = 0;
     private static final int STATE_WAIT_LOCK = 1;
     private int mstate = 0;
@@ -53,12 +84,12 @@ public class MainActivity extends AppCompatActivity {
                     break;
                 case STATE_WAIT_LOCK:
                     Integer autoFocusState = result.get(CaptureResult.CONTROL_AF_STATE);
-                    Toast.makeText(getApplicationContext(), "focus state ="+autoFocusState, Toast.LENGTH_SHORT).show();
-                    switch(autoFocusState){
+                    switch (autoFocusState) {
                         case CaptureResult.CONTROL_AF_STATE_PASSIVE_SCAN:
                             //TODO: my phone is always in this case, idk why yet, will need to test if i can take photos like this
-                            Toast.makeText(getApplicationContext(), "locking focus", Toast.LENGTH_SHORT).show();
-                            unlockFocus();
+                            captureImage();
+                            setUpCamera(previewSize.getWidth(), previewSize.getHeight());
+                            openCamera();
                             break;
 
                         case CaptureResult.CONTROL_AF_STATE_FOCUSED_LOCKED:
@@ -78,7 +109,7 @@ public class MainActivity extends AppCompatActivity {
         @Override
         public void onCaptureCompleted(CameraCaptureSession session, CaptureRequest request, TotalCaptureResult result) {
 
-            process(result);
+            process((CaptureResult) result);
         }
 
         @Override
@@ -87,7 +118,7 @@ public class MainActivity extends AppCompatActivity {
             Toast.makeText(getApplicationContext(), "Capture failed", Toast.LENGTH_SHORT).show();
         }
     };
-    private TextureView preview;
+    private static TextureView preview;
     private TextureView.SurfaceTextureListener previewListener =
             new TextureView.SurfaceTextureListener() {
                 @Override
@@ -98,7 +129,7 @@ public class MainActivity extends AppCompatActivity {
 
                 @Override
                 public void onSurfaceTextureSizeChanged(SurfaceTexture surface, int width, int height) {
-
+                    configureTransform(width,height);
                 }
 
                 @Override
@@ -111,7 +142,7 @@ public class MainActivity extends AppCompatActivity {
 
                 }
             };
-    private Size previewSize;
+    private static Size previewSize;
     private String cameraID;
     private CameraDevice device;
     private CameraDevice.StateCallback callback =
@@ -135,6 +166,61 @@ public class MainActivity extends AppCompatActivity {
             };
     private HandlerThread backgroundThread;
     private Handler backgroundHandler;
+    private static File imageFile;
+    private ImageReader reader;
+    private final ImageReader.OnImageAvailableListener imageAvailableListener = new ImageReader.OnImageAvailableListener() {
+        @Override
+        public void onImageAvailable(ImageReader reader) {
+            backgroundHandler.post(new ImageSaver(reader.acquireNextImage()));
+        }
+    };
+    private File galleryFolder;
+    private final String GALLERY_NAME = "Camera2_app";
+    private String imageLocation = "";
+
+    private static class ImageSaver implements Runnable {
+        private Image imageField;
+
+        public ImageSaver(Image image) {
+            imageField = image;
+        }
+
+        @Override
+        public void run() {
+            ByteBuffer byteBuffer = imageField.getPlanes()[0].getBuffer();
+            byte[] imageBytes = new byte[byteBuffer.remaining()];
+            byteBuffer.get(imageBytes);
+            Bitmap imageAsBitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.length);
+            final Matrix rotationMatrix = new Matrix();
+            if(swappedDimensions) {
+                rotationMatrix.setRotate(180);
+            } else{
+                rotationMatrix.setRotate(90);
+
+            }
+            Bitmap rotatedBitmap = Bitmap.createBitmap(imageAsBitmap, 0, 0, imageAsBitmap.getWidth(), imageAsBitmap.getHeight(), rotationMatrix, false);
+            FileOutputStream outputStream = null;
+            try {
+                outputStream = new FileOutputStream(imageFile);
+                rotatedBitmap.compress(Bitmap.CompressFormat.JPEG, 90, outputStream);
+            } catch (FileNotFoundException e) {
+                e.printStackTrace();
+            } catch (IOException e) {
+                e.printStackTrace();
+            } finally {
+                imageField.close();
+                if (outputStream != null) {
+                    try {
+                        outputStream.flush();
+                        outputStream.close();
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                }
+            }
+            byteBuffer = null;
+        }
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -149,6 +235,13 @@ public class MainActivity extends AppCompatActivity {
     public void onResume() {
         super.onResume();
         openBackgroundThread();
+        //if we're on landscape we rotate the textureview
+        if (getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE) {
+            swappedDimensions = true;
+            final Matrix rotationMatrix = new Matrix();
+            rotationMatrix.setRotate(90);
+            preview.setTransform(rotationMatrix);
+        }
         if (preview.isAvailable()) {
 
             setUpCamera(previewSize.getWidth(), previewSize.getHeight());
@@ -191,6 +284,11 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void setUpCamera(int width, int height) {
+        if (swappedDimensions) {
+            int support = width;
+            width = height;
+            height = support;
+        }
         CameraManager manager = (CameraManager) getSystemService(Context.CAMERA_SERVICE);
         try {
             for (String camera : manager.getCameraIdList()) {
@@ -199,6 +297,20 @@ public class MainActivity extends AppCompatActivity {
                     continue;
                 }
                 StreamConfigurationMap map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
+                Size largestPossiblePhotoSize = Collections.max(Arrays.asList(map.getOutputSizes(ImageFormat.JPEG)),
+                        new Comparator<Size>() {
+                            @Override
+                            public int compare(Size lhs, Size rhs) {
+                                return Long.signum((lhs.getHeight() * lhs.getWidth()) - (rhs.getHeight() * rhs.getWidth()));
+                            }
+                        });
+                reader = ImageReader.newInstance(largestPossiblePhotoSize.getWidth(),
+                        largestPossiblePhotoSize.getHeight(),
+                        ImageFormat.JPEG,
+                        1);
+                if (reader != null) {
+                    reader.setOnImageAvailableListener(imageAvailableListener, backgroundHandler);
+                }
                 previewSize = getOptimalSize(map.getOutputSizes(SurfaceTexture.class), width, height);
                 cameraID = camera;
 
@@ -271,6 +383,10 @@ public class MainActivity extends AppCompatActivity {
             device.close();
             device = null;
         }
+        if (reader != null) {
+            reader.close();
+            reader = null;
+        }
     }
 
     /**
@@ -290,7 +406,7 @@ public class MainActivity extends AppCompatActivity {
         try {
             builder = device.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
             builder.addTarget(previewSurface);
-            device.createCaptureSession(Arrays.asList(previewSurface),
+            device.createCaptureSession(Arrays.asList(previewSurface, reader.getSurface()),
                     new CameraCaptureSession.StateCallback() {
                         @Override
                         public void onConfigured(CameraCaptureSession session) {
@@ -301,7 +417,7 @@ public class MainActivity extends AppCompatActivity {
                             previewCaptureRequest = builder.build();
                             captureSession = session;
                             try {
-                                captureSession.setRepeatingRequest(previewCaptureRequest, null, backgroundHandler);
+                                captureSession.setRepeatingRequest(previewCaptureRequest, sessionCallback, backgroundHandler);
                             } catch (CameraAccessException e) {
                                 e.printStackTrace();
                             }
@@ -349,7 +465,6 @@ public class MainActivity extends AppCompatActivity {
             mstate = STATE_PREVIEW;
             builder.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_CANCEL);
             captureSession.capture(builder.build(), sessionCallback, backgroundHandler);
-            Toast.makeText(getApplicationContext(), "focus unlocked", Toast.LENGTH_SHORT).show();
 
         } catch (CameraAccessException e) {
             e.printStackTrace();
@@ -357,6 +472,79 @@ public class MainActivity extends AppCompatActivity {
     }
 
     public void takePhoto(View view) {
+        try {
+            createImageGallery();
+            imageFile = createImageFile();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
         lockFocus();
+    }
+
+    private File createImageFile() throws IOException {
+
+        String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
+        String imageFileName = "IMAGE_" + timeStamp + "_";
+
+        File image = new File(galleryFolder, imageFileName + ".jpg");
+        imageLocation = image.getAbsolutePath();
+        return image;
+    }
+
+    private void createImageGallery() {
+        File storageDirectory = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES);
+        galleryFolder = new File(storageDirectory, GALLERY_NAME);
+        if (!galleryFolder.exists()) {
+            galleryFolder.mkdirs();
+        }
+
+    }
+
+    private void captureImage() {
+        try {
+            CaptureRequest.Builder captureStillBuilder = device.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE);
+            captureStillBuilder.addTarget(reader.getSurface());
+            int rotation = getWindowManager().getDefaultDisplay().getRotation();
+            captureStillBuilder.set(CaptureRequest.JPEG_ORIENTATION,
+                    ORIENTATIONS.get(rotation));
+            CameraCaptureSession.CaptureCallback captureCallback =
+                    new CameraCaptureSession.CaptureCallback() {
+                        @Override
+                        public void onCaptureCompleted(CameraCaptureSession session, CaptureRequest request, TotalCaptureResult result) {
+                            Toast.makeText(getApplicationContext(),
+                                    "Image Captured!",
+                                    Toast.LENGTH_SHORT).show();
+                            unlockFocus();
+                        }
+                    };
+            captureSession.capture(captureStillBuilder.build(),
+                    captureCallback,
+                    null);
+        } catch (CameraAccessException e) {
+            e.printStackTrace();
+        }
+    }
+    private void configureTransform(int viewWidth, int viewHeight){
+        if (null == preview || null == previewSize) {
+            return;
+        }
+        int rotation = this.getWindowManager().getDefaultDisplay().getRotation();
+        Matrix matrix = new Matrix();
+        RectF viewRect = new RectF(0, 0, viewWidth, viewHeight);
+        RectF bufferRect = new RectF(0, 0, previewSize.getHeight(), previewSize.getWidth());
+        float centerX = viewRect.centerX();
+        float centerY = viewRect.centerY();
+        if (Surface.ROTATION_90 == rotation || Surface.ROTATION_270 == rotation) {
+            bufferRect.offset(centerX - bufferRect.centerX(), centerY - bufferRect.centerY());
+            matrix.setRectToRect(viewRect, bufferRect, Matrix.ScaleToFit.FILL);
+            float scale = Math.max(
+                    (float) viewHeight / previewSize.getHeight(),
+                    (float) viewWidth / previewSize.getWidth());
+            matrix.postScale(scale, scale, centerX, centerY);
+            matrix.postRotate(90 * (rotation - 2), centerX, centerY);
+        } else if (Surface.ROTATION_180 == rotation) {
+            matrix.postRotate(180, centerX, centerY);
+        }
+        preview.setTransform(matrix);
     }
 }
