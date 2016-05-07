@@ -42,6 +42,8 @@ import android.view.Menu;
 import android.view.MenuItem;
 import android.view.TextureView;
 import android.view.View;
+import android.view.Window;
+import android.view.WindowManager;
 import android.widget.Toast;
 
 import java.io.File;
@@ -59,6 +61,7 @@ import java.util.List;
 
 public class MainActivity extends AppCompatActivity {
 
+    private boolean firstTime = true;
     private OrientationEventListener orientationListener;
     private static final SparseIntArray ORIENTATIONS = new SparseIntArray();
 
@@ -89,8 +92,7 @@ public class MainActivity extends AppCompatActivity {
                         case CaptureResult.CONTROL_AF_STATE_PASSIVE_SCAN:
                             //TODO: my phone is always in this case, idk why yet, will need to test if i can take photos like this
                             captureImage();
-                            setUpCamera(previewSize.getWidth(), previewSize.getHeight());
-                            openCamera();
+                            createCameraPreviewSession();
                             break;
 
                         case CaptureResult.CONTROL_AF_STATE_FOCUSED_LOCKED:
@@ -124,6 +126,7 @@ public class MainActivity extends AppCompatActivity {
             new TextureView.SurfaceTextureListener() {
                 @Override
                 public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {
+                    configureTransform(width,height);
                     setUpCamera(width, height);
                     openCamera();
                 }
@@ -233,9 +236,11 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        requestWindowFeature(Window.FEATURE_NO_TITLE);
+        getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
         setContentView(R.layout.activity_main);
-        Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
-        setSupportActionBar(toolbar);
+        //Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
+        //setSupportActionBar(toolbar);
         preview = (TextureView) findViewById(R.id.previewView);
     }
 
@@ -244,11 +249,11 @@ public class MainActivity extends AppCompatActivity {
         super.onResume();
         openBackgroundThread();
         //if we're on landscape we rotate the textureview
-        if (getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE) {
+        /*if (getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE) {
             final Matrix rotationMatrix = new Matrix();
             rotationMatrix.setRotate(90);
             preview.setTransform(rotationMatrix);
-        }
+        }*/
         if (preview.isAvailable()) {
 
             setUpCamera(previewSize.getWidth(), previewSize.getHeight());
@@ -291,6 +296,10 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void setUpCamera(int width, int height) {
+        if(!firstTime){
+            return;
+        }
+        firstTime = false;
         CameraManager manager = (CameraManager) getSystemService(Context.CAMERA_SERVICE);
         try {
             for (String camera : manager.getCameraIdList()) {
@@ -313,6 +322,7 @@ public class MainActivity extends AppCompatActivity {
                 if (reader != null) {
                     reader.setOnImageAvailableListener(imageAvailableListener, backgroundHandler);
                 }
+                screenRotation = getWindowManager().getDefaultDisplay().getRotation();
                 previewSize = getOptimalSize(map.getOutputSizes(SurfaceTexture.class), width, height);
                 cameraID = camera;
 
@@ -333,7 +343,7 @@ public class MainActivity extends AppCompatActivity {
      */
 
     private Size getOptimalSize(Size[] sizes, int width, int height) {
-        List<Size> sizesCollector = new ArrayList<>();
+        /*List<Size> sizesCollector = new ArrayList<>();
         //out of all the supported sizes we choose the ones that are bigger than the preview is and put them inside sizesColletor
         for (Size option : sizes) {
             if (width > height) {
@@ -347,18 +357,34 @@ public class MainActivity extends AppCompatActivity {
             }
         }
         //if we have sizes inside the collector we take the smallest one (less scaling needed)
+        float ratio =(float)width/(float)height;
         if (!sizesCollector.isEmpty()) {
-            return Collections.min(sizesCollector, new Comparator<Size>() {
-                @Override
-                public int compare(Size lhs, Size rhs) {
-                    return Long.signum((lhs.getHeight() * lhs.getWidth()) - (rhs.getHeight() * rhs.getWidth()));
-                }
-            });
-        }
+            return minRatioDifference((Size[]) sizesCollector.toArray(), ratio);
+        }*/
         //if not we take the biggest size available
-        return sizes[0];
+        if(screenRotation== Surface.ROTATION_90 || screenRotation==Surface.ROTATION_270){
+            return sizes[0];
+        }
+        float ratio =(float)width/(float)height;
+        return minRatioDifference(sizes, ratio);
     }
 
+    private Size minRatioDifference(Size[] sizes, float ratio){
+        float minDifference = getRatioDifference(sizes[0], ratio);
+        int i=0;
+        for(int index =0;index<sizes.length;index++){
+            float ratioDifference = getRatioDifference(sizes[index], ratio);
+            if(ratioDifference < minDifference){
+                minDifference = ratioDifference;
+                i = index;
+            }
+            boolean bool = false;
+        }
+        return sizes[i];
+    }
+    private float getRatioDifference(Size size, float ratio){
+        return Math.abs((float)size.getWidth()/(float)size.getHeight() - ratio);
+    }
     /**
      * opens the previously selected camera
      */
