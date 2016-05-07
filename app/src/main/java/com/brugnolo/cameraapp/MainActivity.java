@@ -1,11 +1,8 @@
 package com.brugnolo.cameraapp;
 
 import android.Manifest;
-import android.app.Activity;
 import android.content.Context;
-import android.content.Intent;
 import android.content.pm.PackageManager;
-import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.ImageFormat;
@@ -25,21 +22,19 @@ import android.hardware.camera2.TotalCaptureResult;
 import android.hardware.camera2.params.StreamConfigurationMap;
 import android.media.Image;
 import android.media.ImageReader;
-import android.media.MediaScannerConnection;
-import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
-import android.support.v7.widget.Toolbar;
+import android.util.Log;
 import android.util.Size;
 import android.util.SparseIntArray;
-import android.view.OrientationEventListener;
-import android.view.Surface;
 import android.view.Menu;
 import android.view.MenuItem;
+import android.view.OrientationEventListener;
+import android.view.Surface;
 import android.view.TextureView;
 import android.view.View;
 import android.view.Window;
@@ -61,7 +56,7 @@ import java.util.List;
 
 public class MainActivity extends AppCompatActivity {
 
-    private boolean firstTime = true;
+    //    private boolean firstTime = true;
     private OrientationEventListener orientationListener;
     private static final SparseIntArray ORIENTATIONS = new SparseIntArray();
 
@@ -75,14 +70,14 @@ public class MainActivity extends AppCompatActivity {
     private static int screenRotation;
     private static final int STATE_PREVIEW = 0;
     private static final int STATE_WAIT_LOCK = 1;
-    private int mstate = 0;
+    private int state = 0;
     private CaptureRequest previewCaptureRequest;
     private CaptureRequest.Builder builder;
     private CameraCaptureSession captureSession;
     private CaptureCallback sessionCallback = new CaptureCallback() {
         private void process(CaptureResult result) {
 
-            switch (mstate) {
+            switch (state) {
 
                 case STATE_PREVIEW:
                     break;
@@ -92,7 +87,8 @@ public class MainActivity extends AppCompatActivity {
                         case CaptureResult.CONTROL_AF_STATE_PASSIVE_SCAN:
                             //TODO: my phone is always in this case, idk why yet, will need to test if i can take photos like this
                             captureImage();
-                            createCameraPreviewSession();
+                            setUpCamera(previewSize.getWidth(), previewSize.getHeight());
+                            openCamera();
                             break;
 
                         case CaptureResult.CONTROL_AF_STATE_FOCUSED_LOCKED:
@@ -175,6 +171,7 @@ public class MainActivity extends AppCompatActivity {
     private final ImageReader.OnImageAvailableListener imageAvailableListener = new ImageReader.OnImageAvailableListener() {
         @Override
         public void onImageAvailable(ImageReader reader) {
+            Toast.makeText(getApplicationContext(), "height" + reader.getHeight() + " width " + reader.getWidth(), Toast.LENGTH_SHORT);
             backgroundHandler.post(new ImageSaver(reader.acquireNextImage()));
         }
     };
@@ -296,10 +293,10 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void setUpCamera(int width, int height) {
-        if(!firstTime){
+        /*if(!firstTime){
             return;
-        }
-        firstTime = false;
+        }*/
+//        firstTime = false;
         CameraManager manager = (CameraManager) getSystemService(Context.CAMERA_SERVICE);
         try {
             for (String camera : manager.getCameraIdList()) {
@@ -323,7 +320,7 @@ public class MainActivity extends AppCompatActivity {
                     reader.setOnImageAvailableListener(imageAvailableListener, backgroundHandler);
                 }
                 screenRotation = getWindowManager().getDefaultDisplay().getRotation();
-                previewSize = getOptimalSize(map.getOutputSizes(SurfaceTexture.class), width, height);
+                previewSize = getOptimalSize(map.getOutputSizes(SurfaceTexture.class), width, height, largestPossiblePhotoSize);
                 cameraID = camera;
 
                 return;
@@ -335,6 +332,10 @@ public class MainActivity extends AppCompatActivity {
 
     /**
      * search the best size for the preview (closest to wanted is better)
+     * we started by using our own algorithm, but the preview was stretched or in low quality,
+     * so we switched to the algorithm google uses. Result is it's still a bit stretched,
+     * but not at low quality
+     * I think there's some limitation hardware side, might work better with other phones
      *
      * @param sizes  the sizes supported by the camera for the preview
      * @param width  actual TextureView width
@@ -342,31 +343,55 @@ public class MainActivity extends AppCompatActivity {
      * @return the optimal size
      */
 
-    private Size getOptimalSize(Size[] sizes, int width, int height) {
-        /*List<Size> sizesCollector = new ArrayList<>();
-        //out of all the supported sizes we choose the ones that are bigger than the preview is and put them inside sizesColletor
+    private Size getOptimalSize(Size[] sizes, int width, int height, Size largest) {
+        //<Google's example algorithm>
+        // Collect the supported resolutions that are at least as big as the preview Surface
+        List<Size> bigEnough = new ArrayList<>();
+        // Collect the supported resolutions that are smaller than the preview Surface
+        List<Size> notBigEnough = new ArrayList<>();
+        int w = largest.getWidth();
+        int h = largest.getHeight();
         for (Size option : sizes) {
-            if (width > height) {
-                if ((option.getWidth() > width) && (option.getHeight() > height)) {
-                    sizesCollector.add(option);
-                }
-            } else {
-                if ((option.getWidth() > height) && (option.getHeight() > width)) {
-                    sizesCollector.add(option);
+            if (option.getHeight() == option.getWidth() * h / w) {
+                if (option.getWidth() >= width &&
+                        option.getHeight() >= height) {
+                    bigEnough.add(option);
+                } else {
+                    notBigEnough.add(option);
                 }
             }
         }
-        //if we have sizes inside the collector we take the smallest one (less scaling needed)
-        float ratio =(float)width/(float)height;
-        if (!sizesCollector.isEmpty()) {
-            return minRatioDifference((Size[]) sizesCollector.toArray(), ratio);
-        }*/
+
+        // Pick the smallest of those big enough. If there is no one big enough, pick the
+        // largest of those not big enough.
+        final Comparator<Size> comparator = new Comparator<Size>() {
+            @Override
+            public int compare(Size lhs, Size rhs) {
+                return Long.signum(lhs.getHeight() * lhs.getWidth() - rhs.getWidth() * rhs.getHeight());
+            }
+        };
+        if (bigEnough.size() > 0) {
+            return Collections.min(bigEnough, comparator);
+        } else if (notBigEnough.size() > 0) {
+            return Collections.max(notBigEnough, comparator);
+        } else {
+            Log.e("preview tag", "Couldn't find any suitable preview size");
+            return sizes[0];
+        }
+    }
+    // </Google's example algorithm>
+
+    //<our algorithm>
+
         //if not we take the biggest size available
-        if(screenRotation== Surface.ROTATION_90 || screenRotation==Surface.ROTATION_270){
+        /*if(screenRotation== Surface.ROTATION_90 || screenRotation==Surface.ROTATION_270){
             return sizes[0];
         }
         float ratio =(float)width/(float)height;
-        return minRatioDifference(sizes, ratio);
+        return minRatioDifference(sizes,
+                (screenRotation== Surface.ROTATION_90 || screenRotation==Surface.ROTATION_270) ? ratio : 1/ratio);
+
+
     }
 
     private Size minRatioDifference(Size[] sizes, float ratio){
@@ -378,13 +403,14 @@ public class MainActivity extends AppCompatActivity {
                 minDifference = ratioDifference;
                 i = index;
             }
-            boolean bool = false;
         }
         return sizes[i];
     }
     private float getRatioDifference(Size size, float ratio){
         return Math.abs((float)size.getWidth()/(float)size.getHeight() - ratio);
     }
+    </our algorithm>
+    */
     /**
      * opens the previously selected camera
      */
@@ -480,7 +506,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void lockFocus() {
         try {
-            mstate = STATE_WAIT_LOCK;
+            state = STATE_WAIT_LOCK;
             builder.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_START);
             captureSession.capture(builder.build(), sessionCallback, backgroundHandler);
         } catch (CameraAccessException e) {
@@ -490,7 +516,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void unlockFocus() {
         try {
-            mstate = STATE_PREVIEW;
+            state = STATE_PREVIEW;
             builder.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_CANCEL);
             captureSession.capture(builder.build(), sessionCallback, backgroundHandler);
 
