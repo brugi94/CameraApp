@@ -2,6 +2,7 @@ package com.brugnolo.cameraapp;
 
 import android.Manifest;
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
@@ -28,10 +29,7 @@ import android.os.Handler;
 import android.os.HandlerThread;
 import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
-import android.util.Log;
 import android.util.Size;
-import android.view.Menu;
-import android.view.MenuItem;
 import android.view.Surface;
 import android.view.TextureView;
 import android.view.View;
@@ -45,15 +43,14 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.Date;
-import java.util.List;
 
 public class MainActivity extends AppCompatActivity {
 
+    private Size photoSize;
     private final int SCREEN_WIDTH = 1920;
     private final int SCREEN_HEIGHT = 1080;
     private static int screenRotation;
@@ -76,8 +73,12 @@ public class MainActivity extends AppCompatActivity {
                         case CaptureResult.CONTROL_AF_STATE_PASSIVE_SCAN:
                             //TODO: my phone is always in this case, idk why yet, will need to test if i can take photos like this
                             captureImage();
-                            setUpCamera(previewSize.getWidth(), previewSize.getHeight());
-                            openCamera();
+                            unlockFocus();
+                            try {
+                                captureSession.setRepeatingRequest(builder.build(), null, backgroundHandler);
+                            } catch (CameraAccessException e) {
+                                e.printStackTrace();
+                            }
                             break;
 
                         case CaptureResult.CONTROL_AF_STATE_FOCUSED_LOCKED:
@@ -107,16 +108,15 @@ public class MainActivity extends AppCompatActivity {
         }
     };
     private static TextureView preview;
-    private static Size previewSize = new Size(1280, 720);
+    private static Size previewSize = new Size(1280, 960);
     private String cameraID;
     private CameraDevice device;
-    private CameraDevice.StateCallback callback =
+    private CameraDevice.StateCallback cameraCallback =
             new CameraDevice.StateCallback() {
                 @Override
                 public void onOpened(CameraDevice camera) {
                     device = camera;
                     createCameraPreviewSession();
-                    //Toast.makeText(getApplicationContext(), "succesfully opened", Toast.LENGTH_LONG).show();
                 }
 
                 @Override
@@ -207,24 +207,24 @@ public class MainActivity extends AppCompatActivity {
     @Override
     public void onResume() {
         super.onResume();
+        retrieveState();
         openBackgroundThread();
         if (preview.isAvailable()) {
 
-            setUpCamera(previewSize.getWidth(), previewSize.getHeight());
+            setUpCamera();
             openCamera();
         } else {
             TextureView.SurfaceTextureListener previewListener =
                     new TextureView.SurfaceTextureListener() {
                         @Override
                         public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {
-                            setUpCamera(width, height);
+                            setUpCamera();
                             configureTransform(width, height);
                             openCamera();
                         }
 
                         @Override
                         public void onSurfaceTextureSizeChanged(SurfaceTexture surface, int width, int height) {
-                            configureTransform(width, height);
                         }
 
                         @Override
@@ -239,159 +239,64 @@ public class MainActivity extends AppCompatActivity {
                     };
             preview.setSurfaceTextureListener(previewListener);
         }
-
-
     }
 
     @Override
     public void onPause() {
+        saveState();
         closeCamera();
         closeBackgroundThread();
         super.onPause();
     }
 
-
-    @Override
-    public boolean onCreateOptionsMenu(Menu menu) {
-        // Inflate the menu; this adds items to the action bar if it is present.
-        getMenuInflater().inflate(R.menu.menu_main, menu);
-        return true;
+    private void retrieveState() {
+        SharedPreferences preferences = getPreferences(MODE_PRIVATE);
+        cameraID = preferences.getString("cameraID", null);
     }
 
-    @Override
-    public boolean onOptionsItemSelected(MenuItem item) {
-        // Handle action bar item clicks here. The action bar will
-        // automatically handle clicks on the Home/Up button, so long
-        // as you specify a parent activity in AndroidManifest.xml.
-        int id = item.getItemId();
-
-        //noinspection SimplifiableIfStatement
-        if (id == R.id.action_settings) {
-            return true;
-        }
-
-        return super.onOptionsItemSelected(item);
+    private void saveState() {
+        SharedPreferences preferences = getPreferences(MODE_PRIVATE);
+        SharedPreferences.Editor editor = preferences.edit();
+        editor.putString("cameraID", cameraID);
     }
 
-    private void setUpCamera(int width, int height) {
-        /*if(!firstTime){
-            return;
-        }*/
-//        firstTime = false;
+    private void setUpCamera() {
         CameraManager manager = (CameraManager) getSystemService(Context.CAMERA_SERVICE);
-        try {
-            for (String camera : manager.getCameraIdList()) {
-                CameraCharacteristics characteristics = manager.getCameraCharacteristics(camera);
-                if (characteristics.get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_FRONT) {
-                    continue;
-                }
-                StreamConfigurationMap map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
-                Size largestPossiblePhotoSize = Collections.max(Arrays.asList(map.getOutputSizes(ImageFormat.JPEG)),
-                        new Comparator<Size>() {
-                            @Override
-                            public int compare(Size lhs, Size rhs) {
-                                return Long.signum((lhs.getHeight() * lhs.getWidth()) - (rhs.getHeight() * rhs.getWidth()));
-                            }
-                        });
-                reader = ImageReader.newInstance(largestPossiblePhotoSize.getWidth(),
-                        largestPossiblePhotoSize.getHeight(),
-                        ImageFormat.JPEG,
-                        1);
-                if (reader != null) {
-                    reader.setOnImageAvailableListener(imageAvailableListener, backgroundHandler);
-                }
-                screenRotation = getWindowManager().getDefaultDisplay().getRotation();
-                previewSize = getOptimalSize(map.getOutputSizes(SurfaceTexture.class), width, height, largestPossiblePhotoSize);
-                cameraID = camera;
-
-                return;
-            }
-        } catch (CameraAccessException e) {
-            e.printStackTrace();
-        }
-    }
-
-    /**
-     * search the best size for the preview (closest to wanted is better)
-     * we started by using our own algorithm, but the preview was stretched or in low quality,
-     * so we switched to the algorithm google uses. Result is it's still a bit stretched,
-     * but not at low quality
-     * I think there's some limitation hardware side, might work better with other phones
-     *
-     * @param sizes  the sizes supported by the camera for the preview
-     * @param width  actual TextureView width
-     * @param height actual TextureView height
-     * @return the optimal size
-     */
-
-    private Size getOptimalSize(Size[] sizes, int width, int height, Size largest) {
-        //<Google's example algorithm>
-        // Collect the supported resolutions that are at least as big as the preview Surface
-        List<Size> bigEnough = new ArrayList<>();
-        // Collect the supported resolutions that are smaller than the preview Surface
-        List<Size> notBigEnough = new ArrayList<>();
-        int w = largest.getWidth();
-        int h = largest.getHeight();
-        for (Size option : sizes) {
-            if (option.getHeight() == option.getWidth() * h / w) {
-                if (option.getWidth() >= width &&
-                        option.getHeight() >= height) {
-                    bigEnough.add(option);
-                } else {
-                    notBigEnough.add(option);
-                }
-            }
-        }
-
-        // Pick the smallest of those big enough. If there is no one big enough, pick the
-        // largest of those not big enough.
-        final Comparator<Size> comparator = new Comparator<Size>() {
-            @Override
-            public int compare(Size lhs, Size rhs) {
-                return Long.signum(lhs.getHeight() * lhs.getWidth() - rhs.getWidth() * rhs.getHeight());
-            }
-        };
-        if (bigEnough.size() > 0) {
-            return Collections.min(bigEnough, comparator);
-        } else if (notBigEnough.size() > 0) {
-            return Collections.max(notBigEnough, comparator);
+        if (cameraID != null && photoSize != null) {
+            setupReader();
         } else {
-            Log.e("preview tag", "Couldn't find any suitable preview size");
-            return sizes[1];
-        }
-    }
-    // </Google's example algorithm>
+            try {
+                for (String camera : manager.getCameraIdList()) {
+                    CameraCharacteristics characteristics = manager.getCameraCharacteristics(camera);
+                    if (characteristics.get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_FRONT) {
+                        continue;
+                    }
+                    StreamConfigurationMap map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
+                    photoSize = Collections.max(Arrays.asList(map.getOutputSizes(ImageFormat.JPEG)),
+                            new Comparator<Size>() {
+                                @Override
+                                public int compare(Size lhs, Size rhs) {
+                                    return Long.signum((lhs.getHeight() * lhs.getWidth()) - (rhs.getHeight() * rhs.getWidth()));
+                                }
+                            });
+                    setupReader();
+                    cameraID = camera;
 
-    //<our algorithm>
-
-    //if not we take the biggest size available
-        /*if(screenRotation== Surface.ROTATION_90 || screenRotation==Surface.ROTATION_270){
-            return sizes[0];
-        }
-        float ratio =(float)width/(float)height;
-        return minRatioDifference(sizes,
-                (screenRotation== Surface.ROTATION_90 || screenRotation==Surface.ROTATION_270) ? ratio : 1/ratio);
-
-
-    }
-
-    private Size minRatioDifference(Size[] sizes, float ratio){
-        float minDifference = getRatioDifference(sizes[0], ratio);
-        int i=0;
-        for(int index =0;index<sizes.length;index++){
-            float ratioDifference = getRatioDifference(sizes[index], ratio);
-            if(ratioDifference < minDifference){
-                minDifference = ratioDifference;
-                i = index;
+                    return;
+                }
+            } catch (CameraAccessException e) {
+                e.printStackTrace();
             }
         }
-        return sizes[i];
     }
-    private float getRatioDifference(Size size, float ratio){
-        return Math.abs((float)size.getWidth()/(float)size.getHeight() - ratio);
+
+    private void setupReader() {
+        reader = ImageReader.newInstance(photoSize.getWidth(),
+                photoSize.getHeight(),
+                ImageFormat.JPEG,
+                1);
+        reader.setOnImageAvailableListener(imageAvailableListener, backgroundHandler);
     }
-    </our algorithm>
-    */
 
     /**
      * opens the previously selected camera
@@ -404,7 +309,7 @@ public class MainActivity extends AppCompatActivity {
                 Toast.makeText(getApplicationContext(), "not succesfully opened", Toast.LENGTH_LONG).show();
                 return;
             }
-            manager.openCamera(cameraID, callback, backgroundHandler);
+            manager.openCamera(cameraID, cameraCallback, backgroundHandler);
         } catch (CameraAccessException e) {
             e.printStackTrace();
         }
@@ -453,7 +358,7 @@ public class MainActivity extends AppCompatActivity {
                             previewCaptureRequest = builder.build();
                             captureSession = session;
                             try {
-                                captureSession.setRepeatingRequest(previewCaptureRequest, sessionCallback, backgroundHandler);
+                                captureSession.setRepeatingRequest(previewCaptureRequest, null, backgroundHandler);
                             } catch (CameraAccessException e) {
                                 e.printStackTrace();
                             }
@@ -540,7 +445,6 @@ public class MainActivity extends AppCompatActivity {
         try {
             CaptureRequest.Builder captureStillBuilder = device.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE);
             captureStillBuilder.addTarget(reader.getSurface());
-            int rotation = getWindowManager().getDefaultDisplay().getRotation();
             CameraCaptureSession.CaptureCallback captureCallback =
                     new CameraCaptureSession.CaptureCallback() {
                         @Override
@@ -551,7 +455,6 @@ public class MainActivity extends AppCompatActivity {
                             unlockFocus();
                         }
                     };
-            screenRotation = this.getWindowManager().getDefaultDisplay().getRotation();
             captureSession.capture(captureStillBuilder.build(),
                     captureCallback,
                     null);
@@ -566,13 +469,22 @@ public class MainActivity extends AppCompatActivity {
         }
         screenRotation = this.getWindowManager().getDefaultDisplay().getRotation();
         Matrix matrix = new Matrix();
-        RectF dstRect = new RectF(0, 0, viewHeight, viewWidth);
-        RectF srcRect = new RectF(0, 0, previewSize.getWidth(), previewSize.getHeight());
-        dstRect.offset(dstRect.centerX(), -dstRect.centerY());
-        matrix.setRectToRect(srcRect, dstRect, Matrix.ScaleToFit.FILL);
-        float centerX = dstRect.centerX();
-        float centerY = dstRect.centerY();
-        if ((viewWidth > viewHeight) || (screenRotation == Surface.ROTATION_90) || (screenRotation == Surface.ROTATION_270)) {
+        RectF dstRect = null;
+        RectF srcRect = null;
+        if (screenRotation == Surface.ROTATION_0) {
+            dstRect = new RectF(0, 0, viewHeight, viewWidth);
+            srcRect = new RectF(0, 0, previewSize.getWidth(), previewSize.getHeight());
+            matrix.setRectToRect(srcRect, dstRect, Matrix.ScaleToFit.FILL);
+        } else if (screenRotation == Surface.ROTATION_90 || screenRotation == Surface.ROTATION_270) {
+            srcRect = new RectF(0, 0, viewWidth, viewHeight);
+            dstRect = new RectF(0, 0, previewSize.getHeight(), previewSize.getWidth());
+            float centerX = srcRect.centerX();
+            float centerY = srcRect.centerY();
+            dstRect.offset(centerX - dstRect.centerX(), centerY - dstRect.centerY());
+            matrix.setRectToRect(srcRect, dstRect, Matrix.ScaleToFit.FILL);
+            float scale = Math.max((float) viewWidth / previewSize.getWidth(),
+                    (float) viewHeight / previewSize.getHeight());
+            matrix.postScale(scale, scale, centerX, centerY);
             matrix.postRotate(90 * (screenRotation - 2), centerX, centerY);
         }
         preview.setTransform(matrix);
