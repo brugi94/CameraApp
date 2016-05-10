@@ -2,6 +2,7 @@ package com.brugnolo.cameraapp;
 
 import android.Manifest;
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
@@ -28,10 +29,7 @@ import android.os.Handler;
 import android.os.HandlerThread;
 import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
-import android.util.Log;
 import android.util.Size;
-import android.view.Menu;
-import android.view.MenuItem;
 import android.view.Surface;
 import android.view.TextureView;
 import android.view.View;
@@ -45,15 +43,24 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.Date;
-import java.util.List;
 
 public class MainActivity extends AppCompatActivity {
 
+    /*
+    this listener will post a Runnable class instance with the acquired image as parameter, let's move the the ImageSaver class
+     */
+    private final ImageReader.OnImageAvailableListener imageAvailableListener = new ImageReader.OnImageAvailableListener() {
+        @Override
+        public void onImageAvailable(ImageReader reader) {
+            Toast.makeText(getApplicationContext(), "height" + reader.getHeight() + " width " + reader.getWidth(), Toast.LENGTH_SHORT);
+            backgroundHandler.post(new ImageSaver(reader.acquireNextImage()));
+        }
+    };
+    private Size photoSize;
     private final int SCREEN_WIDTH = 1920;
     private final int SCREEN_HEIGHT = 1080;
     private static int screenRotation;
@@ -63,6 +70,10 @@ public class MainActivity extends AppCompatActivity {
     private CaptureRequest previewCaptureRequest;
     private CaptureRequest.Builder builder;
     private CameraCaptureSession captureSession;
+    /*
+    when the capture is completed, we call the process method so that we can capture the image if we got the focus
+    and then unlock the focus and start a new preview(setRepeatingRequest call), let's move to captureImage
+     */
     private CaptureCallback sessionCallback = new CaptureCallback() {
         private void process(CaptureResult result) {
 
@@ -76,8 +87,12 @@ public class MainActivity extends AppCompatActivity {
                         case CaptureResult.CONTROL_AF_STATE_PASSIVE_SCAN:
                             //TODO: my phone is always in this case, idk why yet, will need to test if i can take photos like this
                             captureImage();
-                            setUpCamera(previewSize.getWidth(), previewSize.getHeight());
-                            openCamera();
+                            unlockFocus();
+                            try {
+                                captureSession.setRepeatingRequest(builder.build(), null, backgroundHandler);
+                            } catch (CameraAccessException e) {
+                                e.printStackTrace();
+                            }
                             break;
 
                         case CaptureResult.CONTROL_AF_STATE_FOCUSED_LOCKED:
@@ -107,43 +122,22 @@ public class MainActivity extends AppCompatActivity {
         }
     };
     private static TextureView preview;
-    private static Size previewSize = new Size(1280, 720);
+    private static Size previewSize = new Size(1280, 960);
     private String cameraID;
     private CameraDevice device;
-    private CameraDevice.StateCallback callback =
-            new CameraDevice.StateCallback() {
-                @Override
-                public void onOpened(CameraDevice camera) {
-                    device = camera;
-                    createCameraPreviewSession();
-                    //Toast.makeText(getApplicationContext(), "succesfully opened", Toast.LENGTH_LONG).show();
-                }
-
-                @Override
-                public void onDisconnected(CameraDevice camera) {
-                    release(camera);
-                }
-
-                @Override
-                public void onError(CameraDevice camera, int error) {
-                    release(camera);
-                }
-            };
     private HandlerThread backgroundThread;
     private Handler backgroundHandler;
     private static File imageFile;
     private ImageReader reader;
-    private final ImageReader.OnImageAvailableListener imageAvailableListener = new ImageReader.OnImageAvailableListener() {
-        @Override
-        public void onImageAvailable(ImageReader reader) {
-            Toast.makeText(getApplicationContext(), "height" + reader.getHeight() + " width " + reader.getWidth(), Toast.LENGTH_SHORT);
-            backgroundHandler.post(new ImageSaver(reader.acquireNextImage()));
-        }
-    };
+
     private File galleryFolder;
     private final String GALLERY_NAME = "Camera2_app";
     private String imageLocation = "";
 
+    /*
+    this class is instantiated with the result from the camera capture, and will simply get a bitmap from the result, rotate it if needed
+    and save it to the file we created in the beginning
+     */
     private static class ImageSaver implements Runnable {
         private Image imageField;
 
@@ -161,10 +155,6 @@ public class MainActivity extends AppCompatActivity {
             switch (screenRotation) {
                 case Surface.ROTATION_0:
                     rotationMatrix.setRotate(90);
-                    break;
-                //reverse landscape
-                case Surface.ROTATION_90:
-                    rotationMatrix.setRotate(0);
                     break;
                 //normal landscape
                 case Surface.ROTATION_270:
@@ -204,27 +194,36 @@ public class MainActivity extends AppCompatActivity {
         preview = (TextureView) findViewById(R.id.previewView);
     }
 
+    /*
+    we start from here, so let's break down what's happening in the onResume method
+    1) we call retrieveState() which gets the saved camera id (useful so we don't need to search for a camera again)
+    2) we open the background thread which is used to compute multiple things (will say which when we get to them)
+    3) we check if the preview is available: this will return true only if it's not the first time we call the onResume method
+       so the first time we attach a listener to the preview that will call some other methods when the preview is available
+       the next times we call setUpCamera and openCamera, will explain why on top of those methods
+    let's move to the next method: setUpCamera
+     */
     @Override
     public void onResume() {
         super.onResume();
+        retrieveState();
         openBackgroundThread();
         if (preview.isAvailable()) {
 
-            setUpCamera(previewSize.getWidth(), previewSize.getHeight());
+            setUpCamera();
             openCamera();
         } else {
             TextureView.SurfaceTextureListener previewListener =
                     new TextureView.SurfaceTextureListener() {
                         @Override
                         public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {
-                            setUpCamera(width, height);
+                            setUpCamera();
                             configureTransform(width, height);
                             openCamera();
                         }
 
                         @Override
                         public void onSurfaceTextureSizeChanged(SurfaceTexture surface, int width, int height) {
-                            configureTransform(width, height);
                         }
 
                         @Override
@@ -239,162 +238,80 @@ public class MainActivity extends AppCompatActivity {
                     };
             preview.setSurfaceTextureListener(previewListener);
         }
-
-
     }
 
     @Override
     public void onPause() {
+        saveState();
         closeCamera();
         closeBackgroundThread();
         super.onPause();
     }
 
-
-    @Override
-    public boolean onCreateOptionsMenu(Menu menu) {
-        // Inflate the menu; this adds items to the action bar if it is present.
-        getMenuInflater().inflate(R.menu.menu_main, menu);
-        return true;
+    private void retrieveState() {
+        SharedPreferences preferences = getPreferences(MODE_PRIVATE);
+        cameraID = preferences.getString("cameraID", null);
     }
 
-    @Override
-    public boolean onOptionsItemSelected(MenuItem item) {
-        // Handle action bar item clicks here. The action bar will
-        // automatically handle clicks on the Home/Up button, so long
-        // as you specify a parent activity in AndroidManifest.xml.
-        int id = item.getItemId();
-
-        //noinspection SimplifiableIfStatement
-        if (id == R.id.action_settings) {
-            return true;
-        }
-
-        return super.onOptionsItemSelected(item);
+    private void saveState() {
+        SharedPreferences preferences = getPreferences(MODE_PRIVATE);
+        SharedPreferences.Editor editor = preferences.edit();
+        editor.putString("cameraID", cameraID);
     }
 
-    private void setUpCamera(int width, int height) {
-        /*if(!firstTime){
-            return;
-        }*/
-//        firstTime = false;
-        CameraManager manager = (CameraManager) getSystemService(Context.CAMERA_SERVICE);
-        try {
-            for (String camera : manager.getCameraIdList()) {
-                CameraCharacteristics characteristics = manager.getCameraCharacteristics(camera);
-                if (characteristics.get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_FRONT) {
-                    continue;
-                }
-                StreamConfigurationMap map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
-                Size largestPossiblePhotoSize = Collections.max(Arrays.asList(map.getOutputSizes(ImageFormat.JPEG)),
-                        new Comparator<Size>() {
-                            @Override
-                            public int compare(Size lhs, Size rhs) {
-                                return Long.signum((lhs.getHeight() * lhs.getWidth()) - (rhs.getHeight() * rhs.getWidth()));
-                            }
-                        });
-                reader = ImageReader.newInstance(largestPossiblePhotoSize.getWidth(),
-                        largestPossiblePhotoSize.getHeight(),
-                        ImageFormat.JPEG,
-                        1);
-                if (reader != null) {
-                    reader.setOnImageAvailableListener(imageAvailableListener, backgroundHandler);
-                }
-                screenRotation = getWindowManager().getDefaultDisplay().getRotation();
-                previewSize = getOptimalSize(map.getOutputSizes(SurfaceTexture.class), width, height, largestPossiblePhotoSize);
-                cameraID = camera;
-
-                return;
-            }
-        } catch (CameraAccessException e) {
-            e.printStackTrace();
-        }
-    }
-
-    /**
-     * search the best size for the preview (closest to wanted is better)
-     * we started by using our own algorithm, but the preview was stretched or in low quality,
-     * so we switched to the algorithm google uses. Result is it's still a bit stretched,
-     * but not at low quality
-     * I think there's some limitation hardware side, might work better with other phones
-     *
-     * @param sizes  the sizes supported by the camera for the preview
-     * @param width  actual TextureView width
-     * @param height actual TextureView height
-     * @return the optimal size
+    /*
+    this methods retrieves a camera manager, which is used to get all the cameras and search for the one we prefer
+    in this example we choose a camera on the back of the phone, then we get the supported preview sizes
+    and photo sizes(jpeg format)
+    the setUpReader method simply prepares a request:"i want to take 1 JPEG image with the sizes passed as arguments"
+    then attachs a listener to it which will call a method when the image is ready. this is called in the background thread
+    next part is openCamera()
      */
-
-    private Size getOptimalSize(Size[] sizes, int width, int height, Size largest) {
-        //<Google's example algorithm>
-        // Collect the supported resolutions that are at least as big as the preview Surface
-        List<Size> bigEnough = new ArrayList<>();
-        // Collect the supported resolutions that are smaller than the preview Surface
-        List<Size> notBigEnough = new ArrayList<>();
-        int w = largest.getWidth();
-        int h = largest.getHeight();
-        for (Size option : sizes) {
-            if (option.getHeight() == option.getWidth() * h / w) {
-                if (option.getWidth() >= width &&
-                        option.getHeight() >= height) {
-                    bigEnough.add(option);
-                } else {
-                    notBigEnough.add(option);
-                }
-            }
-        }
-
-        // Pick the smallest of those big enough. If there is no one big enough, pick the
-        // largest of those not big enough.
-        final Comparator<Size> comparator = new Comparator<Size>() {
-            @Override
-            public int compare(Size lhs, Size rhs) {
-                return Long.signum(lhs.getHeight() * lhs.getWidth() - rhs.getWidth() * rhs.getHeight());
-            }
-        };
-        if (bigEnough.size() > 0) {
-            return Collections.min(bigEnough, comparator);
-        } else if (notBigEnough.size() > 0) {
-            return Collections.max(notBigEnough, comparator);
+    private void setUpCamera() {
+        CameraManager manager = (CameraManager) getSystemService(Context.CAMERA_SERVICE);
+        if (cameraID != null && photoSize != null) {
+            setupReader();
         } else {
-            Log.e("preview tag", "Couldn't find any suitable preview size");
-            return sizes[1];
-        }
-    }
-    // </Google's example algorithm>
+            try {
+                for (String camera : manager.getCameraIdList()) {
+                    CameraCharacteristics characteristics = manager.getCameraCharacteristics(camera);
+                    if (characteristics.get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_FRONT) {
+                        continue;
+                    }
+                    StreamConfigurationMap map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
+                    photoSize = Collections.max(Arrays.asList(map.getOutputSizes(ImageFormat.JPEG)),
+                            new Comparator<Size>() {
+                                @Override
+                                public int compare(Size lhs, Size rhs) {
+                                    return Long.signum((lhs.getHeight() * lhs.getWidth()) - (rhs.getHeight() * rhs.getWidth()));
+                                }
+                            });
+                    setupReader();
+                    cameraID = camera;
 
-    //<our algorithm>
-
-    //if not we take the biggest size available
-        /*if(screenRotation== Surface.ROTATION_90 || screenRotation==Surface.ROTATION_270){
-            return sizes[0];
-        }
-        float ratio =(float)width/(float)height;
-        return minRatioDifference(sizes,
-                (screenRotation== Surface.ROTATION_90 || screenRotation==Surface.ROTATION_270) ? ratio : 1/ratio);
-
-
-    }
-
-    private Size minRatioDifference(Size[] sizes, float ratio){
-        float minDifference = getRatioDifference(sizes[0], ratio);
-        int i=0;
-        for(int index =0;index<sizes.length;index++){
-            float ratioDifference = getRatioDifference(sizes[index], ratio);
-            if(ratioDifference < minDifference){
-                minDifference = ratioDifference;
-                i = index;
+                    return;
+                }
+            } catch (CameraAccessException e) {
+                e.printStackTrace();
             }
         }
-        return sizes[i];
     }
-    private float getRatioDifference(Size size, float ratio){
-        return Math.abs((float)size.getWidth()/(float)size.getHeight() - ratio);
+
+    private void setupReader() {
+        reader = ImageReader.newInstance(photoSize.getWidth(),
+                photoSize.getHeight(),
+                ImageFormat.JPEG,
+                1);
+        reader.setOnImageAvailableListener(imageAvailableListener, backgroundHandler);
     }
-    </our algorithm>
-    */
 
     /**
      * opens the previously selected camera
+     */
+    /*
+    here we simply open the camera with the requested cameraID.
+    the call is asynchronous so the method onOpened will be called as soon as the camera is open (this is done on the background thread too)
+    after we succesfully opened the camera, we save the device istance associated to it and try to create a preview session, we'll continue from there
      */
     private void openCamera() {
         CameraManager manager = (CameraManager) getSystemService(Context.CAMERA_SERVICE);
@@ -404,7 +321,25 @@ public class MainActivity extends AppCompatActivity {
                 Toast.makeText(getApplicationContext(), "not succesfully opened", Toast.LENGTH_LONG).show();
                 return;
             }
-            manager.openCamera(cameraID, callback, backgroundHandler);
+            CameraDevice.StateCallback cameraCallback =
+                    new CameraDevice.StateCallback() {
+                        @Override
+                        public void onOpened(CameraDevice camera) {
+                            device = camera;
+                            createCameraPreviewSession();
+                        }
+
+                        @Override
+                        public void onDisconnected(CameraDevice camera) {
+                            release(camera);
+                        }
+
+                        @Override
+                        public void onError(CameraDevice camera, int error) {
+                            release(camera);
+                        }
+                    };
+            manager.openCamera(cameraID, cameraCallback, backgroundHandler);
         } catch (CameraAccessException e) {
             e.printStackTrace();
         }
@@ -435,6 +370,15 @@ public class MainActivity extends AppCompatActivity {
         camera = null;
     }
 
+    /*
+    on this method we need to create a capture session, which needs 3 parameters:
+    1) the surfaces that will be used: we use a surface for the rpeview and another one for saving the file
+    2) a callback for when the session is ready
+    3) the thread where to invoke the callback (we always use the background thread so that the UI thread doesn't get flooded)
+    important notes: once we start a session, we'll be using it for the rest of the application life: we shouldnt create another one
+    with this method the preview is created and we got the setup for saving the image, so we move to the part where we click the button
+    the takePhoto method
+     */
     private void createCameraPreviewSession() {
         SurfaceTexture surfaceSettings = preview.getSurfaceTexture();
         surfaceSettings.setDefaultBufferSize(previewSize.getWidth(), previewSize.getHeight());
@@ -453,7 +397,7 @@ public class MainActivity extends AppCompatActivity {
                             previewCaptureRequest = builder.build();
                             captureSession = session;
                             try {
-                                captureSession.setRepeatingRequest(previewCaptureRequest, sessionCallback, backgroundHandler);
+                                captureSession.setRepeatingRequest(previewCaptureRequest, null, backgroundHandler);
                             } catch (CameraAccessException e) {
                                 e.printStackTrace();
                             }
@@ -463,7 +407,7 @@ public class MainActivity extends AppCompatActivity {
                         public void onConfigureFailed(CameraCaptureSession session) {
                             Toast.makeText(getApplicationContext(), "problem during configuration", Toast.LENGTH_LONG).show();
                         }
-                    }, null);
+                    }, backgroundHandler);
         } catch (CameraAccessException e) {
             e.printStackTrace();
         }
@@ -486,6 +430,11 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    /*
+    in this method we say that our app state is "we got the focus", then we prepare a capture saying
+    that we want to lock the focus and to call the onCaptureCompleted() method from sessionCallback as soon as the focus is granted
+    let's move the sessionCallback declaration
+     */
     private void lockFocus() {
         try {
             state = STATE_WAIT_LOCK;
@@ -507,6 +456,10 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    /*
+    this method is called when the button is clicked: here we create the folder where we'll save the images and then create a file where we'll save the image we take
+    after this we call the lockFocus, so let's move there
+     */
     public void takePhoto(View view) {
         try {
             createImageGallery();
@@ -536,11 +489,14 @@ public class MainActivity extends AppCompatActivity {
 
     }
 
+    /*
+    here we create a builder saying "i want to take a photo" and send it to "reader.getSurface()"
+    after the capture is complete we unlock the focus and the onImageAvailable method is called, so let's move there
+     */
     private void captureImage() {
         try {
             CaptureRequest.Builder captureStillBuilder = device.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE);
             captureStillBuilder.addTarget(reader.getSurface());
-            int rotation = getWindowManager().getDefaultDisplay().getRotation();
             CameraCaptureSession.CaptureCallback captureCallback =
                     new CameraCaptureSession.CaptureCallback() {
                         @Override
@@ -551,10 +507,9 @@ public class MainActivity extends AppCompatActivity {
                             unlockFocus();
                         }
                     };
-            screenRotation = this.getWindowManager().getDefaultDisplay().getRotation();
             captureSession.capture(captureStillBuilder.build(),
                     captureCallback,
-                    null);
+                    backgroundHandler);
         } catch (CameraAccessException e) {
             e.printStackTrace();
         }
@@ -566,13 +521,22 @@ public class MainActivity extends AppCompatActivity {
         }
         screenRotation = this.getWindowManager().getDefaultDisplay().getRotation();
         Matrix matrix = new Matrix();
-        RectF dstRect = new RectF(0, 0, viewHeight, viewWidth);
-        RectF srcRect = new RectF(0, 0, previewSize.getWidth(), previewSize.getHeight());
-        dstRect.offset(dstRect.centerX(), -dstRect.centerY());
-        matrix.setRectToRect(srcRect, dstRect, Matrix.ScaleToFit.FILL);
-        float centerX = dstRect.centerX();
-        float centerY = dstRect.centerY();
-        if ((viewWidth > viewHeight) || (screenRotation == Surface.ROTATION_90) || (screenRotation == Surface.ROTATION_270)) {
+        RectF dstRect = null;
+        RectF srcRect = null;
+        if (screenRotation == Surface.ROTATION_0) {
+            dstRect = new RectF(0, 0, viewHeight, viewWidth);
+            srcRect = new RectF(0, 0, previewSize.getWidth(), previewSize.getHeight());
+            matrix.setRectToRect(srcRect, dstRect, Matrix.ScaleToFit.FILL);
+        } else if (screenRotation == Surface.ROTATION_90 || screenRotation == Surface.ROTATION_270) {
+            srcRect = new RectF(0, 0, viewWidth, viewHeight);
+            dstRect = new RectF(0, 0, previewSize.getHeight(), previewSize.getWidth());
+            float centerX = srcRect.centerX();
+            float centerY = srcRect.centerY();
+            dstRect.offset(centerX - dstRect.centerX(), centerY - dstRect.centerY());
+            matrix.setRectToRect(srcRect, dstRect, Matrix.ScaleToFit.FILL);
+            float scale = Math.max((float) viewWidth / previewSize.getWidth(),
+                    (float) viewHeight / previewSize.getHeight());
+            matrix.postScale(scale, scale, centerX, centerY);
             matrix.postRotate(90 * (screenRotation - 2), centerX, centerY);
         }
         preview.setTransform(matrix);
