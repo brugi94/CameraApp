@@ -116,7 +116,7 @@ public class MainActivity extends AppCompatActivity {
     @Override
     public void onResume() {
         super.onResume();
-        Log.e("Luca_Debug","onResume");
+        Log.e("Luca_Debug", "onResume");
         if (preview.isAvailable()) {
 
         } else {
@@ -131,7 +131,7 @@ public class MainActivity extends AppCompatActivity {
         Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
         setSupportActionBar(toolbar);
         preview = (TextureView) findViewById(R.id.previewView);
-        Log.e("Luca_Debug","onCreate");
+        Log.e("Luca_Debug", "onCreate");
     }
 
     @Override
@@ -207,8 +207,23 @@ public class MainActivity extends AppCompatActivity {
                 }
             });
         }
+
+        Size optimalSize=sizes[0];
+        double currentGap = Math.abs(width/height-sizes[0].getWidth()/sizes[0].getHeight());
+        double minimumGap = currentGap;
+
+        for(int i=1; i<sizes.length; i++){
+
+            currentGap= Math.abs(width/height-sizes[i].getWidth()/sizes[i].getHeight());
+
+            if (minimumGap>currentGap) {
+                minimumGap = currentGap;
+                optimalSize = sizes[i];
+            }
+        }
+
         //if not we take the biggest size available
-        return sizes[0];
+        return optimalSize;
     }
 
     /**
