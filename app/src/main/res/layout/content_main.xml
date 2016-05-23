@@ -11,10 +11,10 @@
     android:background="#000000">
 
     <TextureView
-        android:layout_width="match_parent"
+        android:layout_width="1080px"
         android:layout_height="1440px"
         android:id="@+id/previewView"
-        android:layout_centerVertical="true" />
+        android:layout_centerInParent="true" />
 
     <Button
         android:layout_width="wrap_content"

@@ -29,6 +29,7 @@ import android.os.Handler;
 import android.os.HandlerThread;
 import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
+import android.util.Log;
 import android.util.Size;
 import android.view.Surface;
 import android.view.TextureView;
@@ -56,13 +57,11 @@ public class MainActivity extends AppCompatActivity {
     private final ImageReader.OnImageAvailableListener imageAvailableListener = new ImageReader.OnImageAvailableListener() {
         @Override
         public void onImageAvailable(ImageReader reader) {
-            Toast.makeText(getApplicationContext(), "height" + reader.getHeight() + " width " + reader.getWidth(), Toast.LENGTH_SHORT);
-            backgroundHandler.post(new ImageSaver(reader.acquireNextImage()));
+            backgroundHandler.post(new ImageSaver(reader.acquireNextImage(), imageFile));
         }
     };
+    private final static String TAG = "camera2_app";
     private Size photoSize;
-    private final int SCREEN_WIDTH = 1920;
-    private final int SCREEN_HEIGHT = 1080;
     private static int screenRotation;
     private static final int STATE_PREVIEW = 0;
     private static final int STATE_WAIT_LOCK = 1;
@@ -85,19 +84,7 @@ public class MainActivity extends AppCompatActivity {
                     Integer autoFocusState = result.get(CaptureResult.CONTROL_AF_STATE);
                     switch (autoFocusState) {
                         case CaptureResult.CONTROL_AF_STATE_PASSIVE_SCAN:
-                            //TODO: my phone is always in this case, idk why yet, will need to test if i can take photos like this
                             captureImage();
-                            unlockFocus();
-                            try {
-                                captureSession.setRepeatingRequest(builder.build(), null, backgroundHandler);
-                            } catch (CameraAccessException e) {
-                                e.printStackTrace();
-                            }
-                            break;
-
-                        case CaptureResult.CONTROL_AF_STATE_FOCUSED_LOCKED:
-                            Toast.makeText(getApplicationContext(), "got focus lock", Toast.LENGTH_SHORT).show();
-                            unlockFocus();
                             break;
                     }
                     break;
@@ -127,12 +114,11 @@ public class MainActivity extends AppCompatActivity {
     private CameraDevice device;
     private HandlerThread backgroundThread;
     private Handler backgroundHandler;
-    private static File imageFile;
+    private File imageFile;
     private ImageReader reader;
 
     private File galleryFolder;
     private final String GALLERY_NAME = "Camera2_app";
-    private String imageLocation = "";
 
     /*
     this class is instantiated with the result from the camera capture, and will simply get a bitmap from the result, rotate it if needed
@@ -140,9 +126,11 @@ public class MainActivity extends AppCompatActivity {
      */
     private static class ImageSaver implements Runnable {
         private Image imageField;
+        private File saveFile;
 
-        public ImageSaver(Image image) {
+        public ImageSaver(Image image, File file) {
             imageField = image;
+            saveFile = file;
         }
 
         @Override
@@ -164,8 +152,9 @@ public class MainActivity extends AppCompatActivity {
             Bitmap rotatedBitmap = Bitmap.createBitmap(imageAsBitmap, 0, 0, imageAsBitmap.getWidth(), imageAsBitmap.getHeight(), rotationMatrix, false);
             FileOutputStream outputStream = null;
             try {
-                outputStream = new FileOutputStream(imageFile);
+                outputStream = new FileOutputStream(saveFile);
                 rotatedBitmap.compress(Bitmap.CompressFormat.JPEG, 90, outputStream);
+                Log.i(TAG, "picture saved");
             } catch (FileNotFoundException e) {
                 e.printStackTrace();
             } catch (IOException e) {
@@ -200,44 +189,40 @@ public class MainActivity extends AppCompatActivity {
     2) we open the background thread which is used to compute multiple things (will say which when we get to them)
     3) we check if the preview is available: this will return true only if it's not the first time we call the onResume method
        so the first time we attach a listener to the preview that will call some other methods when the preview is available
-       the next times we call setUpCamera and openCamera, will explain why on top of those methods
-    let's move to the next method: setUpCamera
+       the next times we call getCamera and openCamera, will explain why on top of those methods
+    let's move to the next method: getCamera
      */
     @Override
     public void onResume() {
         super.onResume();
         retrieveState();
         openBackgroundThread();
-        if (preview.isAvailable()) {
+        screenRotation = this.getWindowManager().getDefaultDisplay().getRotation();
+        TextureView.SurfaceTextureListener previewListener =
+                new TextureView.SurfaceTextureListener() {
+                    @Override
+                    public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {
+                        getCamera();
+                        setupReader();
+                        configureTransform(width, height);
+                        openCamera();
+                    }
 
-            setUpCamera();
-            openCamera();
-        } else {
-            TextureView.SurfaceTextureListener previewListener =
-                    new TextureView.SurfaceTextureListener() {
-                        @Override
-                        public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {
-                            setUpCamera();
-                            configureTransform(width, height);
-                            openCamera();
-                        }
+                    @Override
+                    public void onSurfaceTextureSizeChanged(SurfaceTexture surface, int width, int height) {
+                    }
 
-                        @Override
-                        public void onSurfaceTextureSizeChanged(SurfaceTexture surface, int width, int height) {
-                        }
+                    @Override
+                    public boolean onSurfaceTextureDestroyed(SurfaceTexture surface) {
+                        return false;
+                    }
 
-                        @Override
-                        public boolean onSurfaceTextureDestroyed(SurfaceTexture surface) {
-                            return false;
-                        }
+                    @Override
+                    public void onSurfaceTextureUpdated(SurfaceTexture surface) {
 
-                        @Override
-                        public void onSurfaceTextureUpdated(SurfaceTexture surface) {
-
-                        }
-                    };
-            preview.setSurfaceTextureListener(previewListener);
-        }
+                    }
+                };
+        preview.setSurfaceTextureListener(previewListener);
     }
 
     @Override
@@ -267,11 +252,9 @@ public class MainActivity extends AppCompatActivity {
     then attachs a listener to it which will call a method when the image is ready. this is called in the background thread
     next part is openCamera()
      */
-    private void setUpCamera() {
+    private void getCamera() {
         CameraManager manager = (CameraManager) getSystemService(Context.CAMERA_SERVICE);
-        if (cameraID != null && photoSize != null) {
-            setupReader();
-        } else {
+        if (cameraID == null || photoSize == null) {
             try {
                 for (String camera : manager.getCameraIdList()) {
                     CameraCharacteristics characteristics = manager.getCameraCharacteristics(camera);
@@ -286,9 +269,7 @@ public class MainActivity extends AppCompatActivity {
                                     return Long.signum((lhs.getHeight() * lhs.getWidth()) - (rhs.getHeight() * rhs.getWidth()));
                                 }
                             });
-                    setupReader();
                     cameraID = camera;
-
                     return;
                 }
             } catch (CameraAccessException e) {
@@ -347,6 +328,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void closeCamera() {
         if (captureSession != null) {
+            stopPreview();
             captureSession.close();
             captureSession = null;
         }
@@ -396,11 +378,7 @@ public class MainActivity extends AppCompatActivity {
                             }
                             previewCaptureRequest = builder.build();
                             captureSession = session;
-                            try {
-                                captureSession.setRepeatingRequest(previewCaptureRequest, null, backgroundHandler);
-                            } catch (CameraAccessException e) {
-                                e.printStackTrace();
-                            }
+                            startPreview();
                         }
 
                         @Override
@@ -449,8 +427,27 @@ public class MainActivity extends AppCompatActivity {
         try {
             state = STATE_PREVIEW;
             builder.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_CANCEL);
-            captureSession.capture(builder.build(), sessionCallback, backgroundHandler);
+            captureSession.capture(builder.build(), null, null);
+            Log.i(TAG, "focus unlocked");
+            startPreview();
+        } catch (CameraAccessException e) {
+            e.printStackTrace();
+        }
+    }
 
+    private void startPreview() {
+        try {
+            captureSession.setRepeatingRequest(previewCaptureRequest, null, null);
+            Log.i(TAG, "preview started");
+        } catch (CameraAccessException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void stopPreview() {
+        try {
+            captureSession.stopRepeating();
+            Log.i(TAG, "preview stopped");
         } catch (CameraAccessException e) {
             e.printStackTrace();
         }
@@ -476,7 +473,6 @@ public class MainActivity extends AppCompatActivity {
         String imageFileName = "IMAGE_" + timeStamp + "_";
 
         File image = new File(galleryFolder, imageFileName + ".jpg");
-        imageLocation = image.getAbsolutePath();
         return image;
     }
 
@@ -503,15 +499,17 @@ public class MainActivity extends AppCompatActivity {
                     new CameraCaptureSession.CaptureCallback() {
                         @Override
                         public void onCaptureCompleted(CameraCaptureSession session, CaptureRequest request, TotalCaptureResult result) {
-                            Toast.makeText(getApplicationContext(),
-                                    "Image Captured!",
-                                    Toast.LENGTH_SHORT).show();
                             unlockFocus();
                         }
                     };
-            captureSession.capture(captureStillBuilder.build(),
-                    captureCallback,
-                    backgroundHandler);
+            stopPreview();
+            captureSession.capture(captureStillBuilder.build(), new CaptureCallback() {
+                @Override
+                public void onCaptureCompleted(CameraCaptureSession session, CaptureRequest request, TotalCaptureResult result) {
+                    startPreview();
+                }
+            }, backgroundHandler);
+            Log.i(TAG, "picture taken");
         } catch (CameraAccessException e) {
             e.printStackTrace();
         }
@@ -521,7 +519,6 @@ public class MainActivity extends AppCompatActivity {
         if (preview == null) {
             return;
         }
-        screenRotation = this.getWindowManager().getDefaultDisplay().getRotation();
         Matrix matrix = new Matrix();
         RectF dstRect = null;
         RectF srcRect = null;
