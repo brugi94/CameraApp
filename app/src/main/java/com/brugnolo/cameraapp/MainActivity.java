@@ -2,10 +2,9 @@ package com.brugnolo.cameraapp;
 
 import android.Manifest;
 import android.content.Context;
+import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.graphics.ImageFormat;
 import android.graphics.Matrix;
 import android.graphics.RectF;
@@ -24,7 +23,6 @@ import android.hardware.camera2.params.StreamConfigurationMap;
 import android.media.Image;
 import android.media.ImageReader;
 import android.os.Bundle;
-import android.os.Environment;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.support.v4.app.ActivityCompat;
@@ -57,10 +55,29 @@ public class MainActivity extends AppCompatActivity {
     private final ImageReader.OnImageAvailableListener imageAvailableListener = new ImageReader.OnImageAvailableListener() {
         @Override
         public void onImageAvailable(ImageReader reader) {
-            backgroundHandler.post(new ImageSaver(reader.acquireNextImage(), imageFile));
+            Image imageToSave = reader.acquireNextImage();
+            String timeStamp = new SimpleDateFormat("yyyyMMdd").format(new Date());
+            String imageFileName = "IMAGE_" + timeStamp + "_" + (photoCount++);
+            try {
+                FileOutputStream fos = openFileOutput(imageFileName, Context.MODE_PRIVATE);
+                ByteBuffer byteBuffer = imageToSave.getPlanes()[0].getBuffer();
+                byte[] imageBytes = new byte[byteBuffer.remaining()];
+                byteBuffer.get(imageBytes);
+                fos.write(imageBytes, 0, imageBytes.length);
+                Log.i(getString(R.string.LOG_TAG), "sccesfully saved in private directory");
+                Intent i = new Intent(getApplicationContext(), saverService.class);
+                i.putExtra(getString(R.string.FILE_TAG), imageFileName);
+                i.putExtra(getString(R.string.SCREEN_ROTATION_TAG), screenRotation);
+                startService(i);
+                imageToSave.close();
+            } catch (FileNotFoundException e) {
+                Log.e(getString(R.string.LOG_TAG), "error while saving in private directory");
+            } catch (IOException e) {
+                Log.e(getString(R.string.LOG_TAG), "error while saving in private directory");
+            }
         }
     };
-    private final static String TAG = "camera2_app";
+    private int photoCount;
     private Size photoSize;
     private static int screenRotation;
     private static final int STATE_PREVIEW = 0;
@@ -119,60 +136,6 @@ public class MainActivity extends AppCompatActivity {
 
     private File galleryFolder;
     private final String GALLERY_NAME = "Camera2_app";
-
-    /*
-    this class is instantiated with the result from the camera capture, and will simply get a bitmap from the result, rotate it if needed
-    and save it to the file we created in the beginning
-     */
-    private static class ImageSaver implements Runnable {
-        private Image imageField;
-        private File saveFile;
-
-        public ImageSaver(Image image, File file) {
-            imageField = image;
-            saveFile = file;
-        }
-
-        @Override
-        public void run() {
-            ByteBuffer byteBuffer = imageField.getPlanes()[0].getBuffer();
-            byte[] imageBytes = new byte[byteBuffer.remaining()];
-            byteBuffer.get(imageBytes);
-            Bitmap imageAsBitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.length);
-            final Matrix rotationMatrix = new Matrix();
-            switch (screenRotation) {
-                case Surface.ROTATION_0:
-                    rotationMatrix.setRotate(90);
-                    break;
-                //normal landscape
-                case Surface.ROTATION_270:
-                    rotationMatrix.setRotate(180);
-                    break;
-            }
-            Bitmap rotatedBitmap = Bitmap.createBitmap(imageAsBitmap, 0, 0, imageAsBitmap.getWidth(), imageAsBitmap.getHeight(), rotationMatrix, false);
-            FileOutputStream outputStream = null;
-            try {
-                outputStream = new FileOutputStream(saveFile);
-                rotatedBitmap.compress(Bitmap.CompressFormat.JPEG, 90, outputStream);
-                Log.i(TAG, "picture saved");
-            } catch (FileNotFoundException e) {
-                e.printStackTrace();
-            } catch (IOException e) {
-                e.printStackTrace();
-            } finally {
-                imageField.close();
-                if (outputStream != null) {
-                    try {
-                        outputStream.flush();
-                        outputStream.close();
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
-                }
-            }
-            byteBuffer = null;
-        }
-    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -235,13 +198,19 @@ public class MainActivity extends AppCompatActivity {
 
     private void retrieveState() {
         SharedPreferences preferences = getPreferences(MODE_PRIVATE);
-        cameraID = preferences.getString("cameraID", null);
+        cameraID = preferences.getString(getString(R.string.CAMERA_PREFERENCES), null);
+        photoCount = preferences.getInt(getString(R.string.PHOTO_COUNT), 0);
+        Log.i(getString(R.string.LOG_TAG), "state retrieved" + photoCount);
+
     }
 
     private void saveState() {
         SharedPreferences preferences = getPreferences(MODE_PRIVATE);
         SharedPreferences.Editor editor = preferences.edit();
-        editor.putString("cameraID", cameraID);
+        editor.putString(getString(R.string.CAMERA_PREFERENCES), cameraID);
+        editor.putInt(getString(R.string.PHOTO_COUNT), photoCount);
+        Log.i(getString(R.string.LOG_TAG), "state saved");
+        editor.apply();
     }
 
     /*
@@ -428,7 +397,7 @@ public class MainActivity extends AppCompatActivity {
             state = STATE_PREVIEW;
             builder.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_CANCEL);
             captureSession.capture(builder.build(), null, null);
-            Log.i(TAG, "focus unlocked");
+            Log.i(getString(R.string.LOG_TAG), "focus unlocked");
             startPreview();
         } catch (CameraAccessException e) {
             e.printStackTrace();
@@ -438,7 +407,7 @@ public class MainActivity extends AppCompatActivity {
     private void startPreview() {
         try {
             captureSession.setRepeatingRequest(previewCaptureRequest, null, null);
-            Log.i(TAG, "preview started");
+            Log.i(getString(R.string.LOG_TAG), "preview started");
         } catch (CameraAccessException e) {
             e.printStackTrace();
         }
@@ -447,7 +416,7 @@ public class MainActivity extends AppCompatActivity {
     private void stopPreview() {
         try {
             captureSession.stopRepeating();
-            Log.i(TAG, "preview stopped");
+            Log.i(getString(R.string.LOG_TAG), "preview stopped");
         } catch (CameraAccessException e) {
             e.printStackTrace();
         }
@@ -458,31 +427,7 @@ public class MainActivity extends AppCompatActivity {
     after this we call the lockFocus, so let's move there
      */
     public void takePhoto(View view) {
-        try {
-            createImageGallery();
-            imageFile = createImageFile();
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
         lockFocus();
-    }
-
-    private File createImageFile() throws IOException {
-
-        String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
-        String imageFileName = "IMAGE_" + timeStamp + "_";
-
-        File image = new File(galleryFolder, imageFileName + ".jpg");
-        return image;
-    }
-
-    private void createImageGallery() {
-        File storageDirectory = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES);
-        galleryFolder = new File(storageDirectory, GALLERY_NAME);
-        if (!galleryFolder.exists()) {
-            galleryFolder.mkdirs();
-        }
-
     }
 
     /*
@@ -509,7 +454,7 @@ public class MainActivity extends AppCompatActivity {
                     startPreview();
                 }
             }, backgroundHandler);
-            Log.i(TAG, "picture taken");
+            Log.i(getString(R.string.LOG_TAG), "picture taken");
         } catch (CameraAccessException e) {
             e.printStackTrace();
         }

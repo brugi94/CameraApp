@@ -1,4 +1,10 @@
 <resources>
     <string name="app_name">CameraApp</string>
     <string name="action_settings">Settings</string>
+    <string name="FILE_TAG">file to save</string>
+    <string name="CAMERA_PREFERENCES">cameraID</string>
+    <string name="LOG_TAG">camera2_basic_app</string>
+    <string name="CAMERA2_BASIC_APP_FOLDER">camera2 basic app</string>
+    <string name="SCREEN_ROTATION_TAG">screen rotation</string>
+    <string name="PHOTO_COUNT">photo count</string>
 </resources>
