@@ -115,7 +115,7 @@ public class saverService extends IntentService {
 
     private void createImageGallery() {
         File storageDirectory = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES);
-        galleryFolder = new File(storageDirectory, getString(R.string.CAMERA2_BASIC_APP_FOLDER));
+        galleryFolder = new File(storageDirectory, getString(R.string.CAMERA2_APP_FOLDER));
         if (!galleryFolder.exists()) {
             galleryFolder.mkdirs();
         }

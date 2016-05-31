@@ -74,6 +74,7 @@ public class MainActivity extends AppCompatActivity {
             }
         }
     };
+    private int format;
     private int photoCount;
     private Size photoSize;
     private static int screenRotation;
@@ -111,7 +112,8 @@ public class MainActivity extends AppCompatActivity {
     private HandlerThread backgroundThread;
     private Handler backgroundHandler;
     private ImageReader reader;
-
+    private int format;
+    private int effect;
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
