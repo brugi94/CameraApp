@@ -5,6 +5,8 @@ import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Matrix;
+import android.media.MediaScannerConnection;
+import android.net.Uri;
 import android.os.Environment;
 import android.util.Log;
 import android.view.Surface;
@@ -80,6 +82,19 @@ public class saverService extends IntentService {
             outputStream = new FileOutputStream(createImageFile(fileName));
             rotatedBitmap.compress(Bitmap.CompressFormat.JPEG, 100, outputStream);
             Log.i(getString(R.string.LOG_TAG), "picture saved");
+            File file = new File(galleryFolder, fileName+".jpg");
+            MediaScannerConnection.scanFile(getApplicationContext(), new String[]{file.getAbsolutePath()},
+            null, new MediaScannerConnection.MediaScannerConnectionClient() {
+                public void onMediaScannerConnected() {
+                    // Do nothing
+                }
+
+                @Override
+                public void onScanCompleted(String path, Uri uri) {
+                    Log.i(getString(R.string.LOG_TAG), "Scanned");
+                }
+            });
+            file = null;
         } catch (FileNotFoundException e) {
             Log.e(getString(R.string.LOG_TAG), "problem opening output file");
         } catch (IOException e) {
