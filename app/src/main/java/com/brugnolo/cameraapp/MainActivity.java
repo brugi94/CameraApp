@@ -17,7 +17,6 @@ import android.hardware.camera2.CameraDevice;
 import android.hardware.camera2.CameraManager;
 import android.hardware.camera2.CaptureFailure;
 import android.hardware.camera2.CaptureRequest;
-import android.hardware.camera2.CaptureResult;
 import android.hardware.camera2.TotalCaptureResult;
 import android.hardware.camera2.params.StreamConfigurationMap;
 import android.media.Image;
@@ -34,9 +33,7 @@ import android.view.TextureView;
 import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
-import android.widget.Toast;
 
-import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -91,23 +88,6 @@ public class MainActivity extends AppCompatActivity {
     and then unlock the focus and start a new preview(setRepeatingRequest call), let's move to captureImage
      */
     private CaptureCallback sessionCallback = new CaptureCallback() {
-        private void process(CaptureResult result) {
-
-            switch (state) {
-
-                case STATE_PREVIEW:
-                    break;
-                case STATE_WAIT_LOCK:
-                    Integer autoFocusState = result.get(CaptureResult.CONTROL_AF_STATE);
-                    switch (autoFocusState) {
-                        case CaptureResult.CONTROL_AF_STATE_PASSIVE_SCAN:
-                            captureImage();
-                            break;
-                    }
-                    break;
-            }
-        }
-
         @Override
         public void onCaptureStarted(CameraCaptureSession session, CaptureRequest request, long timestamp, long frameNumber) {
             super.onCaptureStarted(session, request, timestamp, frameNumber);
@@ -115,14 +95,13 @@ public class MainActivity extends AppCompatActivity {
 
         @Override
         public void onCaptureCompleted(CameraCaptureSession session, CaptureRequest request, TotalCaptureResult result) {
-
-            process((CaptureResult) result);
+            captureImage();
         }
 
         @Override
         public void onCaptureFailed(CameraCaptureSession session, CaptureRequest request, CaptureFailure failure) {
             super.onCaptureFailed(session, request, failure);
-            Toast.makeText(getApplicationContext(), "Capture failed", Toast.LENGTH_SHORT).show();
+            Log.e(getString(R.string.LOG_TAG), "capture failed");
         }
     };
     private static TextureView preview;
@@ -131,11 +110,7 @@ public class MainActivity extends AppCompatActivity {
     private CameraDevice device;
     private HandlerThread backgroundThread;
     private Handler backgroundHandler;
-    private File imageFile;
     private ImageReader reader;
-
-    private File galleryFolder;
-    private final String GALLERY_NAME = "Camera2_app";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -268,7 +243,7 @@ public class MainActivity extends AppCompatActivity {
         try {
             //TODO : request permissions at runtime
             if (ActivityCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-                Toast.makeText(getApplicationContext(), "not succesfully opened", Toast.LENGTH_LONG).show();
+                Log.e(getString(R.string.LOG_TAG), "error while opening camera");
                 return;
             }
             CameraDevice.StateCallback cameraCallback =
@@ -352,7 +327,7 @@ public class MainActivity extends AppCompatActivity {
 
                         @Override
                         public void onConfigureFailed(CameraCaptureSession session) {
-                            Toast.makeText(getApplicationContext(), "problem during configuration", Toast.LENGTH_LONG).show();
+                            Log.e(getString(R.string.LOG_TAG), "error while creating session");
                         }
                     }, backgroundHandler);
         } catch (CameraAccessException e) {

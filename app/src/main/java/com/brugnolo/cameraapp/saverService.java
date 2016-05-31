@@ -82,18 +82,18 @@ public class saverService extends IntentService {
             outputStream = new FileOutputStream(createImageFile(fileName));
             rotatedBitmap.compress(Bitmap.CompressFormat.JPEG, 100, outputStream);
             Log.i(getString(R.string.LOG_TAG), "picture saved");
-            File file = new File(galleryFolder, fileName+".jpg");
+            File file = new File(galleryFolder, fileName + ".jpg");
             MediaScannerConnection.scanFile(getApplicationContext(), new String[]{file.getAbsolutePath()},
-            null, new MediaScannerConnection.MediaScannerConnectionClient() {
-                public void onMediaScannerConnected() {
-                    // Do nothing
-                }
+                    null, new MediaScannerConnection.MediaScannerConnectionClient() {
+                        @Override
+                        public void onMediaScannerConnected() {
+                        }
 
-                @Override
-                public void onScanCompleted(String path, Uri uri) {
-                    Log.i(getString(R.string.LOG_TAG), "Scanned");
-                }
-            });
+                        @Override
+                        public void onScanCompleted(String path, Uri uri) {
+                            Log.i(getString(R.string.LOG_TAG), "picture shown in gallery");
+                        }
+                    });
             file = null;
         } catch (FileNotFoundException e) {
             Log.e(getString(R.string.LOG_TAG), "problem opening output file");
