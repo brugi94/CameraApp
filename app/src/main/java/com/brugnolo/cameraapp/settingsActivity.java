@@ -50,14 +50,18 @@ public class settingsActivity extends AppCompatActivity {
                 format = ImageFormat.JPEG;
                 break;
         }
-        RadioGroup effectGroup = (RadioGroup) findViewById(R.id.effectsGroup);
-        switch (effectGroup.getCheckedRadioButtonId()) {
-            case R.id.sepiaEffect:
-                effect = CaptureRequest.CONTROL_EFFECT_MODE_SEPIA;
-                break;
-            case R.id.blackboardEffect:
-                effect = CaptureRequest.CONTROL_EFFECT_MODE_BLACKBOARD;
-                break;
+        if (format == ImageFormat.RAW_SENSOR) {
+            effect = CaptureRequest.CONTROL_EFFECT_MODE_OFF;
+        } else {
+            RadioGroup effectGroup = (RadioGroup) findViewById(R.id.effectsGroup);
+            switch (effectGroup.getCheckedRadioButtonId()) {
+                case R.id.sepiaEffect:
+                    effect = CaptureRequest.CONTROL_EFFECT_MODE_SEPIA;
+                    break;
+                case R.id.blackboardEffect:
+                    effect = CaptureRequest.CONTROL_EFFECT_MODE_MONO;
+                    break;
+            }
         }
         Intent i = new Intent(getApplicationContext(), MainActivity.class);
         i.putExtra(getString(R.string.EFFECT_TAG), effect);

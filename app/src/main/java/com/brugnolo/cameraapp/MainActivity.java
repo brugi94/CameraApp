@@ -21,7 +21,10 @@ import android.hardware.camera2.TotalCaptureResult;
 import android.hardware.camera2.params.StreamConfigurationMap;
 import android.media.Image;
 import android.media.ImageReader;
+import android.media.MediaScannerConnection;
+import android.net.Uri;
 import android.os.Bundle;
+import android.os.Environment;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.support.v4.app.ActivityCompat;
@@ -34,6 +37,7 @@ import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
 
+import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -56,16 +60,26 @@ public class MainActivity extends AppCompatActivity {
             String timeStamp = new SimpleDateFormat("yyyyMMdd").format(new Date());
             String imageFileName = "IMAGE_" + timeStamp + "_" + (photoCount++);
             try {
-                FileOutputStream fos = openFileOutput(imageFileName, Context.MODE_PRIVATE);
+                File storageDirectory = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES);
+                File galleryFolder = new File(storageDirectory, getString(R.string.CAMERA2_APP_FOLDER));
+                File image = new File(galleryFolder, imageFileName + ".jpg");
+                FileOutputStream fos = new FileOutputStream(image);
                 ByteBuffer byteBuffer = imageToSave.getPlanes()[0].getBuffer();
                 byte[] imageBytes = new byte[byteBuffer.remaining()];
                 byteBuffer.get(imageBytes);
                 fos.write(imageBytes, 0, imageBytes.length);
-                Log.i(getString(R.string.LOG_TAG), "sccesfully saved in private directory");
-                Intent i = new Intent(getApplicationContext(), saverService.class);
-                i.putExtra(getString(R.string.FILE_TAG), imageFileName);
-                i.putExtra(getString(R.string.SCREEN_ROTATION_TAG), screenRotation);
-                startService(i);
+                Log.i(getString(R.string.LOG_TAG), "succesfully saved");
+                MediaScannerConnection.scanFile(getApplicationContext(), new String[]{image.getAbsolutePath()},
+                        null, new MediaScannerConnection.MediaScannerConnectionClient() {
+                            @Override
+                            public void onMediaScannerConnected() {
+                            }
+
+                            @Override
+                            public void onScanCompleted(String path, Uri uri) {
+                                Log.i(getString(R.string.LOG_TAG), "picture shown in gallery");
+                            }
+                        });
                 imageToSave.close();
             } catch (FileNotFoundException e) {
                 Log.e(getString(R.string.LOG_TAG), "error while saving in private directory");
@@ -74,7 +88,6 @@ public class MainActivity extends AppCompatActivity {
             }
         }
     };
-    private int format;
     private int photoCount;
     private Size photoSize;
     private static int screenRotation;
@@ -114,6 +127,7 @@ public class MainActivity extends AppCompatActivity {
     private ImageReader reader;
     private int format;
     private int effect;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -121,6 +135,9 @@ public class MainActivity extends AppCompatActivity {
         getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
         setContentView(R.layout.activity_main);
         preview = (TextureView) findViewById(R.id.previewView);
+        Intent i = getIntent();
+        format = i.getIntExtra(getString(R.string.FORMAT_TAG), ImageFormat.JPEG);
+        effect = i.getIntExtra(getString(R.string.EFFECT_TAG), -1);
     }
 
     /*
@@ -227,7 +244,7 @@ public class MainActivity extends AppCompatActivity {
     private void setupReader() {
         reader = ImageReader.newInstance(photoSize.getWidth(),
                 photoSize.getHeight(),
-                ImageFormat.JPEG,
+                format,
                 1);
         reader.setOnImageAvailableListener(imageAvailableListener, backgroundHandler);
     }
@@ -314,6 +331,9 @@ public class MainActivity extends AppCompatActivity {
         try {
             builder = device.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
             builder.addTarget(previewSurface);
+            if (effect != -1) {
+                builder.set(CaptureRequest.CONTROL_EFFECT_MODE, effect);
+            }
             device.createCaptureSession(Arrays.asList(previewSurface, reader.getSurface()),
                     new CameraCaptureSession.StateCallback() {
                         @Override
@@ -417,6 +437,22 @@ public class MainActivity extends AppCompatActivity {
             captureStillBuilder.addTarget(reader.getSurface());
             captureStillBuilder.set(CaptureRequest.CONTROL_AE_MODE,
                     CaptureRequest.CONTROL_AE_MODE_ON_AUTO_FLASH);
+            int JPEGRotation;
+            switch (screenRotation) {
+                case Surface.ROTATION_0:
+                    JPEGRotation = 90;
+                    break;
+                //normal landscape
+                case Surface.ROTATION_270:
+                    JPEGRotation = 180;
+                    break;
+                default:
+                    JPEGRotation = 0;
+            }
+            captureStillBuilder.set(CaptureRequest.JPEG_ORIENTATION, JPEGRotation);
+            if (effect != -1) {
+                captureStillBuilder.set(CaptureRequest.CONTROL_EFFECT_MODE, effect);
+            }
             CameraCaptureSession.CaptureCallback captureCallback =
                     new CameraCaptureSession.CaptureCallback() {
                         @Override

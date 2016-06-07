@@ -12,7 +12,7 @@
     <string name="format_text">Choose output format</string>
     <string name="effects_text">Choose effect</string>
     <string name="effect_sepia">Sepia</string>
-    <string name="effect_blackboard">Blackboard</string>
+    <string name="effect_blackboard">Mono</string>
     <string name="FORMAT_TAG">format</string>
     <string name="EFFECT_TAG">effect</string>
     <integer name="RADIO_RAW">0</integer>
