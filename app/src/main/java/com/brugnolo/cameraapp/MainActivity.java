@@ -119,7 +119,7 @@ public class MainActivity extends AppCompatActivity {
         }
     };
     private static TextureView preview;
-    private static Size previewSize = new Size(1280, 960);
+    private static Size previewSize;
     private String cameraID;
     private CameraDevice device;
     private HandlerThread backgroundThread;
@@ -232,6 +232,7 @@ public class MainActivity extends AppCompatActivity {
                                     return Long.signum((lhs.getHeight() * lhs.getWidth()) - (rhs.getHeight() * rhs.getWidth()));
                                 }
                             });
+                    previewSize = map.getOutputSizes(SurfaceTexture.class)[0];
                     cameraID = camera;
                     return;
                 }
