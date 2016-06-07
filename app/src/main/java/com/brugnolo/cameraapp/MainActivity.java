@@ -162,6 +162,11 @@ public class MainActivity extends AppCompatActivity {
     @Override
     public void onResume() {
         super.onResume();
+
+        requestCameraPermission();
+        requestWritePermission();
+        requestReadPermission();
+
         retrieveState();
         openBackgroundThread();
         screenRotation = this.getWindowManager().getDefaultDisplay().getRotation();
@@ -520,7 +525,7 @@ public class MainActivity extends AppCompatActivity {
                 Manifest.permission.CAMERA))!= PackageManager.PERMISSION_GRANTED){
 
 
-            ActivityCompat.requestPermissions((Activity)getApplicationContext(),
+            ActivityCompat.requestPermissions(this,
                     new String[]{Manifest.permission.CAMERA},
                     MY_PERMISSIONS_REQUEST_CAMERA);
 
@@ -531,7 +536,7 @@ public class MainActivity extends AppCompatActivity {
                 Manifest.permission.WRITE_EXTERNAL_STORAGE))!= PackageManager.PERMISSION_GRANTED){
 
 
-            ActivityCompat.requestPermissions((Activity)getApplicationContext(),
+            ActivityCompat.requestPermissions(this,
                     new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE},
                     MY_PERMISSIONS_REQUEST_WRITE_EXTERNAL_STORAGE);
 
@@ -542,7 +547,7 @@ public class MainActivity extends AppCompatActivity {
                 Manifest.permission.READ_EXTERNAL_STORAGE))!= PackageManager.PERMISSION_GRANTED){
 
 
-            ActivityCompat.requestPermissions((Activity)getApplicationContext(),
+            ActivityCompat.requestPermissions(this,
                     new String[]{Manifest.permission.READ_EXTERNAL_STORAGE},
                     MY_PERMISSIONS_REQUEST_READ_EXTERNAL_STORAGE);
 
