@@ -50,6 +50,7 @@ import java.util.Date;
 
 public class MainActivity extends AppCompatActivity {
 
+    private File galleryFolder;
     /*
     this listener will post a Runnable class instance with the acquired image as parameter, let's move the the ImageSaver class
      */
@@ -60,8 +61,7 @@ public class MainActivity extends AppCompatActivity {
             String timeStamp = new SimpleDateFormat("yyyyMMdd").format(new Date());
             String imageFileName = "IMAGE_" + timeStamp + "_" + (photoCount++);
             try {
-                File storageDirectory = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES);
-                File galleryFolder = new File(storageDirectory, getString(R.string.CAMERA2_APP_FOLDER));
+                createImageGallery();
                 File image = new File(galleryFolder, imageFileName + ".jpg");
                 FileOutputStream fos = new FileOutputStream(image);
                 ByteBuffer byteBuffer = imageToSave.getPlanes()[0].getBuffer();
@@ -128,6 +128,13 @@ public class MainActivity extends AppCompatActivity {
     private int format;
     private int effect;
 
+    private void createImageGallery() {
+        File storageDirectory = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES);
+        galleryFolder = new File(storageDirectory, getString(R.string.CAMERA2_APP_FOLDER));
+        if (!galleryFolder.exists()) {
+            galleryFolder.mkdirs();
+        }
+    }
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
