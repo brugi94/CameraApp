@@ -1,6 +1,7 @@
 package com.brugnolo.cameraapp;
 
 import android.Manifest;
+import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -23,11 +24,13 @@ import android.media.Image;
 import android.media.ImageReader;
 import android.media.MediaScannerConnection;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.support.v4.app.ActivityCompat;
+import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
 import android.util.Size;
@@ -50,6 +53,7 @@ import java.util.Date;
 
 public class MainActivity extends AppCompatActivity {
 
+    private File galleryFolder;
     /*
     this listener will post a Runnable class instance with the acquired image as parameter, let's move the the ImageSaver class
      */
@@ -60,8 +64,7 @@ public class MainActivity extends AppCompatActivity {
             String timeStamp = new SimpleDateFormat("yyyyMMdd").format(new Date());
             String imageFileName = "IMAGE_" + timeStamp + "_" + (photoCount++);
             try {
-                File storageDirectory = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES);
-                File galleryFolder = new File(storageDirectory, getString(R.string.CAMERA2_APP_FOLDER));
+                createImageGallery();
                 File image = new File(galleryFolder, imageFileName + ".jpg");
                 FileOutputStream fos = new FileOutputStream(image);
                 ByteBuffer byteBuffer = imageToSave.getPlanes()[0].getBuffer();
@@ -128,6 +131,13 @@ public class MainActivity extends AppCompatActivity {
     private int format;
     private int effect;
 
+    private void createImageGallery() {
+        File storageDirectory = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES);
+        galleryFolder = new File(storageDirectory, getString(R.string.CAMERA2_APP_FOLDER));
+        if (!galleryFolder.exists()) {
+            galleryFolder.mkdirs();
+        }
+    }
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -152,6 +162,11 @@ public class MainActivity extends AppCompatActivity {
     @Override
     public void onResume() {
         super.onResume();
+
+        requestCameraPermission();
+        requestWritePermission();
+        requestReadPermission();
+
         retrieveState();
         openBackgroundThread();
         screenRotation = this.getWindowManager().getDefaultDisplay().getRotation();
@@ -261,7 +276,9 @@ public class MainActivity extends AppCompatActivity {
     private void openCamera() {
         CameraManager manager = (CameraManager) getSystemService(Context.CAMERA_SERVICE);
         try {
-            //TODO : request permissions at runtime
+            //TODO : request permissions at runtime => DONE
+            requestCameraPermission();
+
             if (ActivityCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
                 Log.e(getString(R.string.LOG_TAG), "error while opening camera");
                 return;
@@ -499,4 +516,47 @@ public class MainActivity extends AppCompatActivity {
         }
         preview.setTransform(matrix);
     }
+
+    private int MY_PERMISSIONS_REQUEST_CAMERA=1;                        //IDs for the requests
+    private int MY_PERMISSIONS_REQUEST_WRITE_EXTERNAL_STORAGE=2;
+    private int MY_PERMISSIONS_REQUEST_READ_EXTERNAL_STORAGE=3;
+
+    private void requestCameraPermission() {
+        if((Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)&& (ContextCompat.checkSelfPermission(getApplicationContext(),
+                Manifest.permission.CAMERA))!= PackageManager.PERMISSION_GRANTED){
+
+
+            ActivityCompat.requestPermissions(this,
+                    new String[]{Manifest.permission.CAMERA},
+                    MY_PERMISSIONS_REQUEST_CAMERA);
+
+        }
+
+    }private void requestWritePermission() {
+        if((Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)&& (ContextCompat.checkSelfPermission(getApplicationContext(),
+                Manifest.permission.WRITE_EXTERNAL_STORAGE))!= PackageManager.PERMISSION_GRANTED){
+
+
+            ActivityCompat.requestPermissions(this,
+                    new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE},
+                    MY_PERMISSIONS_REQUEST_WRITE_EXTERNAL_STORAGE);
+
+        }
+
+    }private void requestReadPermission() {
+        if((Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)&& (ContextCompat.checkSelfPermission(getApplicationContext(),
+                Manifest.permission.READ_EXTERNAL_STORAGE))!= PackageManager.PERMISSION_GRANTED){
+
+
+            ActivityCompat.requestPermissions(this,
+                    new String[]{Manifest.permission.READ_EXTERNAL_STORAGE},
+                    MY_PERMISSIONS_REQUEST_READ_EXTERNAL_STORAGE);
+
+        }
+
+    }
+
+
+
+
 }
