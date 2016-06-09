@@ -1,7 +1,6 @@
 package com.brugnolo.cameraapp;
 
 import android.Manifest;
-import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -22,15 +21,11 @@ import android.hardware.camera2.TotalCaptureResult;
 import android.hardware.camera2.params.StreamConfigurationMap;
 import android.media.Image;
 import android.media.ImageReader;
-import android.media.MediaScannerConnection;
-import android.net.Uri;
-import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.support.v4.app.ActivityCompat;
-import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
 import android.util.Size;
@@ -39,12 +34,9 @@ import android.view.TextureView;
 import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
+import android.widget.Toast;
 
 import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.nio.ByteBuffer;
 import java.text.SimpleDateFormat;
 import java.util.Arrays;
 import java.util.Collections;
@@ -52,7 +44,8 @@ import java.util.Comparator;
 import java.util.Date;
 
 public class MainActivity extends AppCompatActivity {
-
+    private boolean saving = false;
+    private ImageSaver saver;
     private File galleryFolder;
     /*
     this listener will post a Runnable class instance with the acquired image as parameter, let's move the the ImageSaver class
@@ -63,32 +56,42 @@ public class MainActivity extends AppCompatActivity {
             Image imageToSave = reader.acquireNextImage();
             String timeStamp = new SimpleDateFormat("yyyyMMdd").format(new Date());
             String imageFileName = "IMAGE_" + timeStamp + "_" + (photoCount++);
-            try {
+            createImageGallery();
+            File image = new File(galleryFolder, imageFileName);
+            saver.setFileToSave(image);
+            saver.setImageToSave(imageToSave);
+            saving = false;
+            if (!backgroundHandler.post(saver)) {
+                Log.e(getString(R.string.LOG_TAG), "failed to post runnable");
+            }
+            /*try {
                 createImageGallery();
                 File image = new File(galleryFolder, imageFileName + ".jpg");
-                FileOutputStream fos = new FileOutputStream(image);
-                ByteBuffer byteBuffer = imageToSave.getPlanes()[0].getBuffer();
-                byte[] imageBytes = new byte[byteBuffer.remaining()];
-                byteBuffer.get(imageBytes);
-                fos.write(imageBytes, 0, imageBytes.length);
-                Log.i(getString(R.string.LOG_TAG), "succesfully saved");
-                MediaScannerConnection.scanFile(getApplicationContext(), new String[]{image.getAbsolutePath()},
-                        null, new MediaScannerConnection.MediaScannerConnectionClient() {
-                            @Override
-                            public void onMediaScannerConnected() {
-                            }
+                if (imageToSave.getFormat() == ImageFormat.JPEG) {
+                    FileOutputStream fos = new FileOutputStream(image);
+                    ByteBuffer byteBuffer = imageToSave.getPlanes()[0].getBuffer();
+                    byte[] imageBytes = new byte[byteBuffer.remaining()];
+                    byteBuffer.get(imageBytes);
+                    fos.write(imageBytes, 0, imageBytes.length);
+                    Log.i(getString(R.string.LOG_TAG), "succesfully saved");
+                    MediaScannerConnection.scanFile(getApplicationContext(), new String[]{image.getAbsolutePath()},
+                            null, new MediaScannerConnection.MediaScannerConnectionClient() {
+                                @Override
+                                public void onMediaScannerConnected() {
+                                }
 
-                            @Override
-                            public void onScanCompleted(String path, Uri uri) {
-                                Log.i(getString(R.string.LOG_TAG), "picture shown in gallery");
-                            }
-                        });
-                imageToSave.close();
+                                @Override
+                                public void onScanCompleted(String path, Uri uri) {
+                                    Log.i(getString(R.string.LOG_TAG), "picture shown in gallery");
+                                }
+                            });
+                    imageToSave.close();
+                }
             } catch (FileNotFoundException e) {
                 Log.e(getString(R.string.LOG_TAG), "error while saving in private directory");
             } catch (IOException e) {
                 Log.e(getString(R.string.LOG_TAG), "error while saving in private directory");
-            }
+            }*/
         }
     };
     private int photoCount;
@@ -100,8 +103,6 @@ public class MainActivity extends AppCompatActivity {
     private CaptureRequest previewCaptureRequest;
     private CaptureRequest.Builder builder;
     private CameraCaptureSession captureSession;
-    private int widthField;
-    private int heightField;
     /*
     when the capture is completed, we call the process method so that we can capture the image if we got the focus
     and then unlock the focus and start a new preview(setRepeatingRequest call), let's move to captureImage
@@ -152,7 +153,6 @@ public class MainActivity extends AppCompatActivity {
         format = i.getIntExtra(getString(R.string.FORMAT_TAG), ImageFormat.JPEG);
         effect = i.getIntExtra(getString(R.string.EFFECT_TAG), -1);
 
-
     }
 
     /*
@@ -167,12 +167,9 @@ public class MainActivity extends AppCompatActivity {
     @Override
     public void onResume() {
         super.onResume();
-
-
         retrieveState();
         openBackgroundThread();
         initializeListener();
-
     }
 
     private void initializeListener() {
@@ -181,10 +178,6 @@ public class MainActivity extends AppCompatActivity {
                 new TextureView.SurfaceTextureListener() {
                     @Override
                     public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {
-
-                        widthField = width;
-                        heightField = height;
-
                         getCamera();
                         setupReader();
                         configureTransform(width, height);
@@ -250,8 +243,9 @@ public class MainActivity extends AppCompatActivity {
                     if (characteristics.get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_FRONT) {
                         continue;
                     }
+                    saver = new ImageSaver(getApplicationContext(), characteristics);//saver isn't already instantiated: if it was, photosize wouldnt be null, nor cameraID would be
                     StreamConfigurationMap map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
-                    photoSize = Collections.max(Arrays.asList(map.getOutputSizes(ImageFormat.JPEG)),
+                    photoSize = Collections.max(Arrays.asList(map.getOutputSizes(format)),
                             new Comparator<Size>() {
                                 @Override
                                 public int compare(Size lhs, Size rhs) {
@@ -274,6 +268,30 @@ public class MainActivity extends AppCompatActivity {
                 format,
                 1);
         reader.setOnImageAvailableListener(imageAvailableListener, backgroundHandler);
+    }
+
+    private void configureTransform(int viewWidth, int viewHeight) {
+        if (preview == null) {
+            return;
+        }
+        if (screenRotation == Surface.ROTATION_90 || screenRotation == Surface.ROTATION_270) {
+            Matrix matrix = new Matrix();
+            RectF srcRect = new RectF(0, 0, viewWidth, viewHeight);
+            RectF dstRect = new RectF(0, 0, previewSize.getHeight(), previewSize.getWidth());
+            float centerX = srcRect.centerX();
+            float centerY = srcRect.centerY();
+            dstRect.offset(centerX - dstRect.centerX(), centerY - dstRect.centerY());
+            matrix.setRectToRect(srcRect, dstRect, Matrix.ScaleToFit.FILL);
+            float scale = Math.max((float) viewWidth / previewSize.getWidth(),
+                    (float) viewHeight / previewSize.getHeight());
+            matrix.postScale(scale, scale, centerX, centerY);
+            if (screenRotation == Surface.ROTATION_90) {
+                matrix.postRotate(-90, centerX, centerY);
+            } else {
+                matrix.postRotate(90, centerX, centerY);
+            }
+            preview.setTransform(matrix);
+        }
     }
 
     /**
@@ -452,7 +470,12 @@ public class MainActivity extends AppCompatActivity {
     after this we call the lockFocus, so let's move there
      */
     public void takePhoto(View view) {
-        lockFocus();
+        if (!saving) {
+            saving = true;
+            lockFocus();
+        } else {
+            Toast.makeText(getApplicationContext(), "saving, wait a while", Toast.LENGTH_SHORT);
+        }
     }
 
     /*
@@ -481,17 +504,11 @@ public class MainActivity extends AppCompatActivity {
             if (effect != -1) {
                 captureStillBuilder.set(CaptureRequest.CONTROL_EFFECT_MODE, effect);
             }
-            CameraCaptureSession.CaptureCallback captureCallback =
-                    new CameraCaptureSession.CaptureCallback() {
-                        @Override
-                        public void onCaptureCompleted(CameraCaptureSession session, CaptureRequest request, TotalCaptureResult result) {
-                            unlockFocus();
-                        }
-                    };
             stopPreview();
             captureSession.capture(captureStillBuilder.build(), new CaptureCallback() {
                 @Override
                 public void onCaptureCompleted(CameraCaptureSession session, CaptureRequest request, TotalCaptureResult result) {
+                    saver.setCaptureResult(result);
                     startPreview();
                 }
             }, backgroundHandler);
@@ -500,38 +517,4 @@ public class MainActivity extends AppCompatActivity {
             e.printStackTrace();
         }
     }
-
-    private void configureTransform(int viewWidth, int viewHeight) {
-        if (preview == null) {
-            return;
-        }
-        Matrix matrix = new Matrix();
-        RectF dstRect = null;
-        RectF srcRect = null;
-        /*if (screenRotation == Surface.ROTATION_0) {
-            dstRect = new RectF(0, 0, viewHeight, viewWidth);
-            srcRect = new RectF(0, 0, previewSize.getWidth(), previewSize.getHeight());
-            matrix.setRectToRect(srcRect, dstRect, Matrix.ScaleToFit.FILL);
-        } else */
-        if (screenRotation == Surface.ROTATION_90 || screenRotation == Surface.ROTATION_270) {
-            srcRect = new RectF(0, 0, viewWidth, viewHeight);
-            dstRect = new RectF(0, 0, previewSize.getHeight(), previewSize.getWidth());
-            float centerX = srcRect.centerX();
-            float centerY = srcRect.centerY();
-            dstRect.offset(centerX - dstRect.centerX(), centerY - dstRect.centerY());
-            matrix.setRectToRect(srcRect, dstRect, Matrix.ScaleToFit.FILL);
-            float scale = Math.max((float) viewWidth / previewSize.getWidth(),
-                    (float) viewHeight / previewSize.getHeight());
-            matrix.postScale(scale, scale, centerX, centerY);
-            if (screenRotation == Surface.ROTATION_90) {
-                matrix.postRotate(90 * (screenRotation - 2), centerX, centerY);
-            }
-            else {
-                matrix.postRotate(90, centerX, centerY);
-            }
-        }
-        preview.setTransform(matrix);
-    }
-
-
 }
