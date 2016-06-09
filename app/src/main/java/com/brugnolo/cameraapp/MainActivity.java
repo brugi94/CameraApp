@@ -175,15 +175,15 @@ public class MainActivity extends AppCompatActivity {
 
     }
 
-    private void initializeListener(){
+    private void initializeListener() {
         screenRotation = this.getWindowManager().getDefaultDisplay().getRotation();
         TextureView.SurfaceTextureListener previewListener =
                 new TextureView.SurfaceTextureListener() {
                     @Override
                     public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {
 
-                        widthField=width;
-                        heightField=height;
+                        widthField = width;
+                        heightField = height;
 
                         getCamera();
                         setupReader();
@@ -523,11 +523,15 @@ public class MainActivity extends AppCompatActivity {
             float scale = Math.max((float) viewWidth / previewSize.getWidth(),
                     (float) viewHeight / previewSize.getHeight());
             matrix.postScale(scale, scale, centerX, centerY);
-            matrix.postRotate(90 * (screenRotation - 2), centerX, centerY);
+            if (screenRotation == Surface.ROTATION_90) {
+                matrix.postRotate(90 * (screenRotation - 2), centerX, centerY);
+            }
+            else {
+                matrix.postRotate(90, centerX, centerY);
+            }
         }
         preview.setTransform(matrix);
     }
-
 
 
 }
