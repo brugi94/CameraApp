@@ -100,6 +100,8 @@ public class MainActivity extends AppCompatActivity {
     private CaptureRequest previewCaptureRequest;
     private CaptureRequest.Builder builder;
     private CameraCaptureSession captureSession;
+    private int widthField;
+    private int heightField;
     /*
     when the capture is completed, we call the process method so that we can capture the image if we got the focus
     and then unlock the focus and start a new preview(setRepeatingRequest call), let's move to captureImage
@@ -138,6 +140,7 @@ public class MainActivity extends AppCompatActivity {
             galleryFolder.mkdirs();
         }
     }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -148,6 +151,8 @@ public class MainActivity extends AppCompatActivity {
         Intent i = getIntent();
         format = i.getIntExtra(getString(R.string.FORMAT_TAG), ImageFormat.JPEG);
         effect = i.getIntExtra(getString(R.string.EFFECT_TAG), -1);
+
+
     }
 
     /*
@@ -163,17 +168,23 @@ public class MainActivity extends AppCompatActivity {
     public void onResume() {
         super.onResume();
 
-        requestCameraPermission();
-        requestWritePermission();
-        requestReadPermission();
 
         retrieveState();
         openBackgroundThread();
+        initializeListener();
+
+    }
+
+    private void initializeListener(){
         screenRotation = this.getWindowManager().getDefaultDisplay().getRotation();
         TextureView.SurfaceTextureListener previewListener =
                 new TextureView.SurfaceTextureListener() {
                     @Override
                     public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {
+
+                        widthField=width;
+                        heightField=height;
+
                         getCamera();
                         setupReader();
                         configureTransform(width, height);
@@ -277,7 +288,6 @@ public class MainActivity extends AppCompatActivity {
         CameraManager manager = (CameraManager) getSystemService(Context.CAMERA_SERVICE);
         try {
             //TODO : request permissions at runtime => DONE
-            requestCameraPermission();
 
             if (ActivityCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
                 Log.e(getString(R.string.LOG_TAG), "error while opening camera");
@@ -498,11 +508,12 @@ public class MainActivity extends AppCompatActivity {
         Matrix matrix = new Matrix();
         RectF dstRect = null;
         RectF srcRect = null;
-        if (screenRotation == Surface.ROTATION_0) {
+        /*if (screenRotation == Surface.ROTATION_0) {
             dstRect = new RectF(0, 0, viewHeight, viewWidth);
             srcRect = new RectF(0, 0, previewSize.getWidth(), previewSize.getHeight());
             matrix.setRectToRect(srcRect, dstRect, Matrix.ScaleToFit.FILL);
-        } else if (screenRotation == Surface.ROTATION_90 || screenRotation == Surface.ROTATION_270) {
+        } else */
+        if (screenRotation == Surface.ROTATION_90 || screenRotation == Surface.ROTATION_270) {
             srcRect = new RectF(0, 0, viewWidth, viewHeight);
             dstRect = new RectF(0, 0, previewSize.getHeight(), previewSize.getWidth());
             float centerX = srcRect.centerX();
@@ -516,46 +527,6 @@ public class MainActivity extends AppCompatActivity {
         }
         preview.setTransform(matrix);
     }
-
-    private int MY_PERMISSIONS_REQUEST_CAMERA=1;                        //IDs for the requests
-    private int MY_PERMISSIONS_REQUEST_WRITE_EXTERNAL_STORAGE=2;
-    private int MY_PERMISSIONS_REQUEST_READ_EXTERNAL_STORAGE=3;
-
-    private void requestCameraPermission() {
-        if((Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)&& (ContextCompat.checkSelfPermission(getApplicationContext(),
-                Manifest.permission.CAMERA))!= PackageManager.PERMISSION_GRANTED){
-
-
-            ActivityCompat.requestPermissions(this,
-                    new String[]{Manifest.permission.CAMERA},
-                    MY_PERMISSIONS_REQUEST_CAMERA);
-
-        }
-
-    }private void requestWritePermission() {
-        if((Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)&& (ContextCompat.checkSelfPermission(getApplicationContext(),
-                Manifest.permission.WRITE_EXTERNAL_STORAGE))!= PackageManager.PERMISSION_GRANTED){
-
-
-            ActivityCompat.requestPermissions(this,
-                    new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE},
-                    MY_PERMISSIONS_REQUEST_WRITE_EXTERNAL_STORAGE);
-
-        }
-
-    }private void requestReadPermission() {
-        if((Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)&& (ContextCompat.checkSelfPermission(getApplicationContext(),
-                Manifest.permission.READ_EXTERNAL_STORAGE))!= PackageManager.PERMISSION_GRANTED){
-
-
-            ActivityCompat.requestPermissions(this,
-                    new String[]{Manifest.permission.READ_EXTERNAL_STORAGE},
-                    MY_PERMISSIONS_REQUEST_READ_EXTERNAL_STORAGE);
-
-        }
-
-    }
-
 
 
 

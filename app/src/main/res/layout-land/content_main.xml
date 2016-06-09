@@ -11,8 +11,8 @@
     android:background="#000000">
 
     <TextureView
-        android:layout_height="1920px"
-        android:layout_width="1440px"
+        android:layout_height="1440px"
+        android:layout_width="1920px"
 
         android:id="@+id/previewView"
         android:layout_centerInParent="true" />

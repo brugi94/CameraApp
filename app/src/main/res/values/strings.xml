@@ -17,8 +17,9 @@
     <string name="EFFECT_TAG">effect</string>
     <integer name="RADIO_RAW">0</integer>
     <integer name="RADIO_JPEG">1</integer>
-    <integer name="RADIO_SEPIA">0</integer>
+    <integer name="RADIO_SEPIA">2</integer>
     <integer name="RADIO_BLACKBOARD">1</integer>
     <string name="START_TEXT">Take photos</string>
     <string name="photo_button">Take picture</string>
+    <string name="no_effect">No Effect</string>
 </resources>
