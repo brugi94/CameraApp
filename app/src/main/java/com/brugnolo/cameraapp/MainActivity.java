@@ -53,6 +53,7 @@ public class MainActivity extends AppCompatActivity {
     private final ImageReader.OnImageAvailableListener imageAvailableListener = new ImageReader.OnImageAvailableListener() {
         @Override
         public void onImageAvailable(ImageReader reader) {
+            Log.i(getString(R.string.LOG_TAG), "image available");
             Image imageToSave = reader.acquireNextImage();
             String timeStamp = new SimpleDateFormat("yyyyMMdd").format(new Date());
             String imageFileName = "IMAGE_" + timeStamp + "_" + (photoCount++);
@@ -61,9 +62,6 @@ public class MainActivity extends AppCompatActivity {
             saver.setFileToSave(image);
             saver.setImageToSave(imageToSave);
             saving = false;
-            if (!backgroundHandler.post(saver)) {
-                Log.e(getString(R.string.LOG_TAG), "failed to post runnable");
-            }
             /*try {
                 createImageGallery();
                 File image = new File(galleryFolder, imageFileName + ".jpg");
@@ -97,9 +95,6 @@ public class MainActivity extends AppCompatActivity {
     private int photoCount;
     private Size photoSize;
     private static int screenRotation;
-    private static final int STATE_PREVIEW = 0;
-    private static final int STATE_WAIT_LOCK = 1;
-    private int state = 0;
     private CaptureRequest previewCaptureRequest;
     private CaptureRequest.Builder builder;
     private CameraCaptureSession captureSession;
@@ -427,7 +422,6 @@ public class MainActivity extends AppCompatActivity {
      */
     private void lockFocus() {
         try {
-            state = STATE_WAIT_LOCK;
             builder.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_START);
             captureSession.capture(builder.build(), sessionCallback, backgroundHandler);
         } catch (CameraAccessException e) {
@@ -437,7 +431,6 @@ public class MainActivity extends AppCompatActivity {
 
     private void unlockFocus() {
         try {
-            state = STATE_PREVIEW;
             builder.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_CANCEL);
             captureSession.capture(builder.build(), null, null);
             Log.i(getString(R.string.LOG_TAG), "focus unlocked");
@@ -508,7 +501,11 @@ public class MainActivity extends AppCompatActivity {
             captureSession.capture(captureStillBuilder.build(), new CaptureCallback() {
                 @Override
                 public void onCaptureCompleted(CameraCaptureSession session, CaptureRequest request, TotalCaptureResult result) {
+                    Log.i(getString(R.string.LOG_TAG), "capture completed");
                     saver.setCaptureResult(result);
+                    if (!backgroundHandler.post(saver)) {
+                        Log.e(getString(R.string.LOG_TAG), "failed to post runnable");
+                    }
                     startPreview();
                 }
             }, backgroundHandler);
