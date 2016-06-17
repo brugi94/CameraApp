@@ -13,9 +13,18 @@ import android.support.v7.app.AppCompatActivity;
 import android.view.View;
 import android.widget.RadioButton;
 import android.widget.RadioGroup;
+import android.widget.Toast;
 
 public class settingsActivity extends AppCompatActivity {
+
+    private int MY_PERMISSIONS_REQUEST_CAMERA = 1;                        //IDs for the requests
+    private int MY_PERMISSIONS_REQUEST_WRITE_EXTERNAL_STORAGE = 2;
+    private int MY_PERMISSIONS_REQUEST_READ_EXTERNAL_STORAGE = 3;
+
     @Override
+    /*
+    retrieves the previous state if there was any, otherwise default settings are applied
+     */
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_settings);
@@ -41,42 +50,58 @@ public class settingsActivity extends AppCompatActivity {
         } else {
             setRaw();
         }
-
     }
 
+    /*
+    applies default settings
+     */
     private void setRaw() {
         ((RadioButton) findViewById(R.id.normalEffect)).toggle();
         ((RadioButton) findViewById(R.id.RawRadio)).toggle();
         setEnabled(R.id.effectsGroup, false);
     }
 
+    /*
+    listener for the raw radiobutton click: greys out the effects
+     */
     public void clickRaw(View view){
         ((RadioButton) findViewById(R.id.normalEffect)).toggle();
         setEnabled(R.id.effectsGroup, false);
     }
+
+    /*
+    listener for the jpeg radiobutton click: turns normal the effects if they were greyed out
+     */
     public void clickJPEG(View view){
         setEnabled(R.id.effectsGroup, true);
     }
 
+    /*
+    sets a radiogroup so that group.isEnabled() == value
+     */
     private void setEnabled(int group, boolean value) {
         RadioGroup effectGroup = (RadioGroup) findViewById(group);
-        if (((RadioButton) effectGroup.getChildAt(0)).isEnabled()!=value) {
+        if ((effectGroup.getChildAt(0)).isEnabled() != value) {
             for (int i = 0; i < effectGroup.getChildCount(); i++) {
-                ((RadioButton) effectGroup.getChildAt(i)).setEnabled(value);
+                (effectGroup.getChildAt(i)).setEnabled(value);
             }
         }
     }
 
+    /*
+    listener for the button where the user asks to take pictures which asks for the permission:
+    if they're not granted just a toast is displayed that asks to give permission
+    otherwise we retrieve the selected settings and then start the photo-taking activity with an intent containing those settings
+     */
     public void startCamera(View view) {
 
-        requestCameraPermission();
-        requestWritePermission();
-        requestReadPermission();
-
-        if(((ContextCompat.checkSelfPermission(getApplicationContext(),
-                Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)&&((ContextCompat.checkSelfPermission(getApplicationContext(),
-                Manifest.permission.READ_EXTERNAL_STORAGE)) == PackageManager.PERMISSION_GRANTED)&&((ContextCompat.checkSelfPermission(getApplicationContext(),
-                Manifest.permission.WRITE_EXTERNAL_STORAGE)) == PackageManager.PERMISSION_GRANTED))) {
+        requestPermission(Manifest.permission.CAMERA, MY_PERMISSIONS_REQUEST_CAMERA);
+        requestPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE, MY_PERMISSIONS_REQUEST_WRITE_EXTERNAL_STORAGE);
+        requestPermission(Manifest.permission.READ_EXTERNAL_STORAGE, MY_PERMISSIONS_REQUEST_READ_EXTERNAL_STORAGE);
+        //checks if we have permissions
+        if ((checkPermission(Manifest.permission.CAMERA)
+                && (checkPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE))
+                && checkPermission(Manifest.permission.READ_EXTERNAL_STORAGE))) {
             int format = 0;
             int effect = 0;
             RadioGroup formatGroup = (RadioGroup) findViewById(R.id.formatGroup);
@@ -108,9 +133,14 @@ public class settingsActivity extends AppCompatActivity {
             i.putExtra(getString(R.string.FORMAT_TAG), format);
             i.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
             startActivity(i);
+        } else {
+            Toast.makeText(getApplicationContext(), "please grant permissions", Toast.LENGTH_LONG).show();
         }
     }
 
+    /*
+    saves the current state
+     */
     @Override
     public void onSaveInstanceState(Bundle savedInstanceState) {
         int format = 0;
@@ -138,45 +168,24 @@ public class settingsActivity extends AppCompatActivity {
         super.onSaveInstanceState(savedInstanceState);
     }
 
-    private int MY_PERMISSIONS_REQUEST_CAMERA = 1;                        //IDs for the requests
-    private int MY_PERMISSIONS_REQUEST_WRITE_EXTERNAL_STORAGE = 2;
-    private int MY_PERMISSIONS_REQUEST_READ_EXTERNAL_STORAGE = 3;
-
-    private void requestCameraPermission() {
+    /**
+     * @param permission the requested permission
+     */
+    private void requestPermission(String permission, int id) {
         if ((Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) && (ContextCompat.checkSelfPermission(getApplicationContext(),
-                Manifest.permission.CAMERA)) != PackageManager.PERMISSION_GRANTED) {
-
-
+                permission)) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this,
-                    new String[]{Manifest.permission.CAMERA},
-                    MY_PERMISSIONS_REQUEST_CAMERA);
-
+                    new String[]{permission},
+                    id);
         }
-
     }
 
-    private void requestWritePermission() {
-        if ((Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) && (ContextCompat.checkSelfPermission(getApplicationContext(),
-                Manifest.permission.WRITE_EXTERNAL_STORAGE)) != PackageManager.PERMISSION_GRANTED) {
-
-
-            ActivityCompat.requestPermissions(this,
-                    new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE},
-                    MY_PERMISSIONS_REQUEST_WRITE_EXTERNAL_STORAGE);
-
-        }
-
-    }
-
-    public void requestReadPermission() {
-        if ((Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) && (ContextCompat.checkSelfPermission(getApplicationContext(),
-                Manifest.permission.READ_EXTERNAL_STORAGE)) != PackageManager.PERMISSION_GRANTED) {
-
-
-            ActivityCompat.requestPermissions(this,
-                    new String[]{Manifest.permission.READ_EXTERNAL_STORAGE},
-                    MY_PERMISSIONS_REQUEST_READ_EXTERNAL_STORAGE);
-
-        }
+    /**
+     * @param permission the permission to check for
+     * @return true if granted, false otherwise
+     */
+    private boolean checkPermission(String permission) {
+        return ((ContextCompat.checkSelfPermission(getApplicationContext(),
+                permission)) == PackageManager.PERMISSION_GRANTED);
     }
 }

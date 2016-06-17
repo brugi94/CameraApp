@@ -38,87 +38,24 @@ import android.widget.Toast;
 
 import java.io.File;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.Date;
+import java.util.List;
 
 public class MainActivity extends AppCompatActivity {
     private boolean saving = false;
     private ImageSaver saver;
     private File galleryFolder;
-    /*
-    this listener will post a Runnable class instance with the acquired image as parameter, let's move the the ImageSaver class
-     */
-    private final ImageReader.OnImageAvailableListener imageAvailableListener = new ImageReader.OnImageAvailableListener() {
-        @Override
-        public void onImageAvailable(ImageReader reader) {
-            Log.i(getString(R.string.LOG_TAG), "image available");
-            Image imageToSave = reader.acquireNextImage();
-            String timeStamp = new SimpleDateFormat("yyyyMMdd").format(new Date());
-            String imageFileName = "IMAGE_" + timeStamp + "_" + (photoCount++);
-            createImageGallery();
-            File image = new File(galleryFolder, imageFileName);
-            saver.setFileToSave(image);
-            saver.setImageToSave(imageToSave);
-            saving = false;
-            /*try {
-                createImageGallery();
-                File image = new File(galleryFolder, imageFileName + ".jpg");
-                if (imageToSave.getFormat() == ImageFormat.JPEG) {
-                    FileOutputStream fos = new FileOutputStream(image);
-                    ByteBuffer byteBuffer = imageToSave.getPlanes()[0].getBuffer();
-                    byte[] imageBytes = new byte[byteBuffer.remaining()];
-                    byteBuffer.get(imageBytes);
-                    fos.write(imageBytes, 0, imageBytes.length);
-                    Log.i(getString(R.string.LOG_TAG), "succesfully saved");
-                    MediaScannerConnection.scanFile(getApplicationContext(), new String[]{image.getAbsolutePath()},
-                            null, new MediaScannerConnection.MediaScannerConnectionClient() {
-                                @Override
-                                public void onMediaScannerConnected() {
-                                }
-
-                                @Override
-                                public void onScanCompleted(String path, Uri uri) {
-                                    Log.i(getString(R.string.LOG_TAG), "picture shown in gallery");
-                                }
-                            });
-                    imageToSave.close();
-                }
-            } catch (FileNotFoundException e) {
-                Log.e(getString(R.string.LOG_TAG), "error while saving in private directory");
-            } catch (IOException e) {
-                Log.e(getString(R.string.LOG_TAG), "error while saving in private directory");
-            }*/
-        }
-    };
     private int photoCount;
     private Size photoSize;
     private static int screenRotation;
     private CaptureRequest previewCaptureRequest;
     private CaptureRequest.Builder builder;
     private CameraCaptureSession captureSession;
-    /*
-    when the capture is completed, we call the process method so that we can capture the image if we got the focus
-    and then unlock the focus and start a new preview(setRepeatingRequest call), let's move to captureImage
-     */
-    private CaptureCallback sessionCallback = new CaptureCallback() {
-        @Override
-        public void onCaptureStarted(CameraCaptureSession session, CaptureRequest request, long timestamp, long frameNumber) {
-            super.onCaptureStarted(session, request, timestamp, frameNumber);
-        }
 
-        @Override
-        public void onCaptureCompleted(CameraCaptureSession session, CaptureRequest request, TotalCaptureResult result) {
-            captureImage();
-        }
-
-        @Override
-        public void onCaptureFailed(CameraCaptureSession session, CaptureRequest request, CaptureFailure failure) {
-            super.onCaptureFailed(session, request, failure);
-            Log.e(getString(R.string.LOG_TAG), "capture failed");
-        }
-    };
     private static TextureView preview;
     private static Size previewSize;
     private String cameraID;
@@ -129,14 +66,23 @@ public class MainActivity extends AppCompatActivity {
     private int format;
     private int effect;
 
-    private void createImageGallery() {
-        File storageDirectory = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES);
-        galleryFolder = new File(storageDirectory, getString(R.string.CAMERA2_APP_FOLDER));
-        if (!galleryFolder.exists()) {
-            galleryFolder.mkdirs();
+    /*
+    compares sizes, the one with the largest area is the bigger
+     */
+    static class CompareSizesByArea implements Comparator<Size> {
+
+        @Override
+        public int compare(Size lhs, Size rhs) {
+            // We cast here to ensure the multiplications won't overflow
+            return Long.signum((long) lhs.getWidth() * lhs.getHeight() -
+                    (long) rhs.getWidth() * rhs.getHeight());
         }
     }
 
+
+    /*
+    onCreate simply takes care of retrieving the parameters sent by the previous activity and instantiating the things we need
+     */
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -151,13 +97,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     /*
-    we start from here, so let's break down what's happening in the onResume method
-    1) we call retrieveState() which gets the saved camera id (useful so we don't need to search for a camera again)
-    2) we open the background thread which is used to compute multiple things (will say which when we get to them)
-    3) we check if the preview is available: this will return true only if it's not the first time we call the onResume method
-       so the first time we attach a listener to the preview that will call some other methods when the preview is available
-       the next times we call getCamera and openCamera, will explain why on top of those methods
-    let's move to the next method: getCamera
+    calls the method needed to start the preview
      */
     @Override
     public void onResume() {
@@ -167,6 +107,29 @@ public class MainActivity extends AppCompatActivity {
         initializeListener();
     }
 
+    /*
+    gets the saved camera id, if there's one saved (useful so we don't need to search for a camera again) and also the photo count(used the the photo name)
+     */
+    private void retrieveState() {
+        SharedPreferences preferences = getPreferences(MODE_PRIVATE);
+        cameraID = preferences.getString(getString(R.string.CAMERA_PREFERENCES), null);
+        photoCount = preferences.getInt(getString(R.string.PHOTO_COUNT), 0);
+        Log.i(getString(R.string.LOG_TAG), "state retrieved" + photoCount);
+
+    }
+
+    /*
+    opens the background thread which is used to save the images and to execute some callbacks
+    */
+    private void openBackgroundThread() {
+        backgroundThread = new HandlerThread("Camera2 background thread");
+        backgroundThread.start();
+        backgroundHandler = new Handler(backgroundThread.getLooper());
+    }
+
+    /*
+    sets a listener to the texture view which contains the method callbacks that will be used when the view is ready
+     */
     private void initializeListener() {
         screenRotation = this.getWindowManager().getDefaultDisplay().getRotation();
         TextureView.SurfaceTextureListener previewListener =
@@ -196,39 +159,12 @@ public class MainActivity extends AppCompatActivity {
         preview.setSurfaceTextureListener(previewListener);
     }
 
-    @Override
-    public void onPause() {
-        saveState();
-        closeCamera();
-        closeBackgroundThread();
-        super.onPause();
-    }
-
-    private void retrieveState() {
-        SharedPreferences preferences = getPreferences(MODE_PRIVATE);
-        cameraID = preferences.getString(getString(R.string.CAMERA_PREFERENCES), null);
-        photoCount = preferences.getInt(getString(R.string.PHOTO_COUNT), 0);
-        Log.i(getString(R.string.LOG_TAG), "state retrieved" + photoCount);
-
-    }
-
-    private void saveState() {
-        SharedPreferences preferences = getPreferences(MODE_PRIVATE);
-        SharedPreferences.Editor editor = preferences.edit();
-        editor.putString(getString(R.string.CAMERA_PREFERENCES), cameraID);
-        editor.putInt(getString(R.string.PHOTO_COUNT), photoCount);
-        Log.i(getString(R.string.LOG_TAG), "state saved");
-        editor.apply();
-    }
-
     /*
     this methods retrieves a camera manager, which is used to get all the cameras and search for the one we prefer
     in this example we choose a camera on the back of the phone, then we get the supported preview sizes
-    and photo sizes(jpeg format)
-    the setUpReader method simply prepares a request:"i want to take 1 JPEG image with the sizes passed as arguments"
-    then attachs a listener to it which will call a method when the image is ready. this is called in the background thread
-    next part is openCamera()
-     */
+    and photo sizes for the requested format
+    also initializes the saver with the basic parameters (a builder pattern is used for the imageSaver class)
+    */
     private void getCamera() {
         CameraManager manager = (CameraManager) getSystemService(Context.CAMERA_SERVICE);
         if (cameraID == null || photoSize == null) {
@@ -240,14 +176,8 @@ public class MainActivity extends AppCompatActivity {
                     }
                     saver = new ImageSaver(getApplicationContext(), characteristics);//saver isn't already instantiated: if it was, photosize wouldnt be null, nor cameraID would be
                     StreamConfigurationMap map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
-                    photoSize = Collections.max(Arrays.asList(map.getOutputSizes(format)),
-                            new Comparator<Size>() {
-                                @Override
-                                public int compare(Size lhs, Size rhs) {
-                                    return Long.signum((lhs.getHeight() * lhs.getWidth()) - (rhs.getHeight() * rhs.getWidth()));
-                                }
-                            });
-                    previewSize = map.getOutputSizes(SurfaceTexture.class)[0];
+                    photoSize = Collections.max(Arrays.asList(map.getOutputSizes(format)), new CompareSizesByArea());
+                    previewSize = getSize(map);
                     cameraID = camera;
                     return;
                 }
@@ -257,14 +187,69 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    /**
+     * @param map the map from which to take the sizes
+     * @return the smallest of the big enough supported sizes (if there are big enough), otherwise the largest of the smaller ones
+     */
+    private Size getSize(StreamConfigurationMap map) {
+        List<Size> bigEnough = new ArrayList<>();
+        // Collect the supported resolutions that are smaller than the preview Surface
+        List<Size> notBigEnough = new ArrayList<>();
+        Size[] choices = map.getOutputSizes(SurfaceTexture.class);
+        for (Size option : choices) {
+            if (option.getWidth() >= preview.getWidth() && option.getHeight() >= preview.getHeight()) {
+                bigEnough.add(option);
+            } else {
+                notBigEnough.add(option);
+            }
+        }
+        if (!bigEnough.isEmpty()) {
+            return Collections.min(bigEnough, new CompareSizesByArea());
+        } else {
+            return Collections.max(notBigEnough, new CompareSizesByArea());
+        }
+    }
+
+    /*
+    sets up the output for the final image with the sizes, format and number of photo we want to take
+    also sets the callbacks for when the image is ready
+    we prepare the file name, in case we need to the image folder is created, the saver gets completely built and then we start saving
+     */
     private void setupReader() {
         reader = ImageReader.newInstance(photoSize.getWidth(),
                 photoSize.getHeight(),
                 format,
                 1);
-        reader.setOnImageAvailableListener(imageAvailableListener, backgroundHandler);
+        reader.setOnImageAvailableListener(new ImageReader.OnImageAvailableListener() {
+            @Override
+            public void onImageAvailable(ImageReader reader) {
+                Log.i(getString(R.string.LOG_TAG), "image available");
+                Image imageToSave = reader.acquireNextImage();
+                String timeStamp = new SimpleDateFormat("yyyyMMdd").format(new Date());
+                String imageFileName = "IMAGE_" + timeStamp + "_" + (photoCount++);
+                createImageGallery();
+                File image = new File(galleryFolder, imageFileName);
+                saver.setFileToSave(image);
+                saver.setImageToSave(imageToSave);
+                saving = false;
+            }
+        }, backgroundHandler);
     }
 
+    /*
+    creates the folder where the images are saved
+     */
+    private void createImageGallery() {
+        File storageDirectory = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES);
+        galleryFolder = new File(storageDirectory, getString(R.string.CAMERA2_APP_FOLDER));
+        if (!galleryFolder.exists()) {
+            galleryFolder.mkdirs();
+        }
+    }
+
+    /*
+    transforms the preview to match te current screen orientation: if we're in landscape mode, we rotate the preview and scale it to be fine
+     */
     private void configureTransform(int viewWidth, int viewHeight) {
         if (preview == null) {
             return;
@@ -289,19 +274,12 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    /**
-     * opens the previously selected camera
-     */
     /*
-    here we simply open the camera with the requested cameraID.
-    the call is asynchronous so the method onOpened will be called as soon as the camera is open (this is done on the background thread too)
-    after we succesfully opened the camera, we save the device istance associated to it and try to create a preview session, we'll continue from there
-     */
+     * opens the previously selected camera and sets the callbacks
+    */
     private void openCamera() {
         CameraManager manager = (CameraManager) getSystemService(Context.CAMERA_SERVICE);
         try {
-            //TODO : request permissions at runtime => DONE
-
             if (ActivityCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
                 Log.e(getString(R.string.LOG_TAG), "error while opening camera");
                 return;
@@ -330,6 +308,87 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    /*
+    prepares the capture session which needs: the output targets, the callbacks and where to execute it
+    we also setup our texture view to accept images of a maximum size (actual size depends by the phone)
+    */
+    private void createCameraPreviewSession() {
+        SurfaceTexture surfaceSettings = preview.getSurfaceTexture();
+        surfaceSettings.setDefaultBufferSize(previewSize.getWidth(), previewSize.getHeight());
+        Surface previewSurface = new Surface(surfaceSettings);
+        try {
+            builder = device.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
+            builder.addTarget(previewSurface);
+            if (effect != -1) {
+                builder.set(CaptureRequest.CONTROL_EFFECT_MODE, effect);
+            }
+            device.createCaptureSession(Arrays.asList(previewSurface, reader.getSurface()),
+                    new CameraCaptureSession.StateCallback() {
+                        @Override
+                        public void onConfigured(CameraCaptureSession session) {
+                            if (device == null) {
+                                Log.e(getString(R.string.LOG_TAG), "camera device is null");
+                                return;
+                            }
+                            previewCaptureRequest = builder.build();
+                            captureSession = session;
+                            startPreview();
+                        }
+
+                        @Override
+                        public void onConfigureFailed(CameraCaptureSession session) {
+                            Log.e(getString(R.string.LOG_TAG), "error while creating session");
+                        }
+                    }, backgroundHandler);
+        } catch (CameraAccessException e) {
+            e.printStackTrace();
+        }
+    }
+
+    /*
+    starts the preview
+     */
+    private void startPreview() {
+        try {
+            captureSession.setRepeatingRequest(previewCaptureRequest,
+                    new CaptureCallback() {
+                        @Override
+                        public void onCaptureCompleted(CameraCaptureSession session, CaptureRequest request, TotalCaptureResult result) {
+                            Log.i(getString(R.string.LOG_TAG), "preview started");
+                        }
+                    },
+                    backgroundHandler);
+        } catch (CameraAccessException e) {
+            e.printStackTrace();
+        }
+    }
+
+    /*
+    call methods to free resources and save the state
+     */
+    @Override
+    public void onPause() {
+        saveState();
+        closeCamera();
+        closeBackgroundThread();
+        super.onPause();
+    }
+
+    /*
+    saves the photo count and cameraID
+     */
+    private void saveState() {
+        SharedPreferences preferences = getPreferences(MODE_PRIVATE);
+        SharedPreferences.Editor editor = preferences.edit();
+        editor.putString(getString(R.string.CAMERA_PREFERENCES), cameraID);
+        editor.putInt(getString(R.string.PHOTO_COUNT), photoCount);
+        Log.i(getString(R.string.LOG_TAG), "state saved");
+        editor.apply();
+    }
+
+    /*
+    releases acquired resources
+     */
     private void closeCamera() {
         if (captureSession != null) {
             stopPreview();
@@ -357,53 +416,8 @@ public class MainActivity extends AppCompatActivity {
     }
 
     /*
-    on this method we need to create a capture session, which needs 3 parameters:
-    1) the surfaces that will be used: we use a surface for the rpeview and another one for saving the file
-    2) a callback for when the session is ready
-    3) the thread where to invoke the callback (we always use the background thread so that the UI thread doesn't get flooded)
-    important notes: once we start a session, we'll be using it for the rest of the application life: we shouldnt create another one
-    with this method the preview is created and we got the setup for saving the image, so we move to the part where we click the button
-    the takePhoto method
+    closes background thread
      */
-    private void createCameraPreviewSession() {
-        SurfaceTexture surfaceSettings = preview.getSurfaceTexture();
-        surfaceSettings.setDefaultBufferSize(previewSize.getWidth(), previewSize.getHeight());
-        Surface previewSurface = new Surface(surfaceSettings);
-        try {
-            builder = device.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
-            builder.addTarget(previewSurface);
-            if (effect != -1) {
-                builder.set(CaptureRequest.CONTROL_EFFECT_MODE, effect);
-            }
-            device.createCaptureSession(Arrays.asList(previewSurface, reader.getSurface()),
-                    new CameraCaptureSession.StateCallback() {
-                        @Override
-                        public void onConfigured(CameraCaptureSession session) {
-                            if (device == null) {
-                                return;
-                                //TODO : make it better
-                            }
-                            previewCaptureRequest = builder.build();
-                            captureSession = session;
-                            startPreview();
-                        }
-
-                        @Override
-                        public void onConfigureFailed(CameraCaptureSession session) {
-                            Log.e(getString(R.string.LOG_TAG), "error while creating session");
-                        }
-                    }, backgroundHandler);
-        } catch (CameraAccessException e) {
-            e.printStackTrace();
-        }
-    }
-
-    private void openBackgroundThread() {
-        backgroundThread = new HandlerThread("Camera2 background thread");
-        backgroundThread.start();
-        backgroundHandler = new Handler(backgroundThread.getLooper());
-    }
-
     private void closeBackgroundThread() {
         backgroundThread.quitSafely();
         try {
@@ -416,52 +430,8 @@ public class MainActivity extends AppCompatActivity {
     }
 
     /*
-    in this method we say that our app state is "we got the focus", then we prepare a capture saying
-    that we want to lock the focus and to call the onCaptureCompleted() method from sessionCallback as soon as the focus is granted
-    let's move the sessionCallback declaration
-     */
-    private void lockFocus() {
-        try {
-            builder.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_START);
-            captureSession.capture(builder.build(), sessionCallback, backgroundHandler);
-        } catch (CameraAccessException e) {
-            e.printStackTrace();
-        }
-    }
-
-    private void unlockFocus() {
-        try {
-            builder.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_CANCEL);
-            captureSession.capture(builder.build(), null, null);
-            Log.i(getString(R.string.LOG_TAG), "focus unlocked");
-            startPreview();
-        } catch (CameraAccessException e) {
-            e.printStackTrace();
-        }
-    }
-
-    private void startPreview() {
-        try {
-            captureSession.setRepeatingRequest(previewCaptureRequest, null, null);
-            Log.i(getString(R.string.LOG_TAG), "preview started");
-        } catch (CameraAccessException e) {
-            e.printStackTrace();
-        }
-    }
-
-    private void stopPreview() {
-        try {
-            captureSession.stopRepeating();
-            Log.i(getString(R.string.LOG_TAG), "preview stopped");
-        } catch (CameraAccessException e) {
-            e.printStackTrace();
-        }
-    }
-
-    /*
-    this method is called when the button is clicked: here we create the folder where we'll save the images and then create a file where we'll save the image we take
-    after this we call the lockFocus, so let's move there
-     */
+    this method is called when the button is clicked: if we're not saving a photo we lock the focus, otherwise we tell the user to wait a while
+    */
     public void takePhoto(View view) {
         if (!saving) {
             saving = true;
@@ -472,9 +442,40 @@ public class MainActivity extends AppCompatActivity {
     }
 
     /*
-    here we create a builder saying "i want to take a photo" and send it to "reader.getSurface()"
-    after the capture is complete we unlock the focus and the onImageAvailable method is called, so let's move there
+    we ask the camera to lock the focus (an unlock isnt needed since we restart the preview when we're done taking each photo
+    when the focus is locked we start taking an image
      */
+    private void lockFocus() {
+        try {
+            builder.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_START);
+            captureSession.capture(builder.build(), new CaptureCallback() {
+                @Override
+                public void onCaptureStarted(CameraCaptureSession session, CaptureRequest request, long timestamp, long frameNumber) {
+                    super.onCaptureStarted(session, request, timestamp, frameNumber);
+                }
+
+                @Override
+                public void onCaptureCompleted(CameraCaptureSession session, CaptureRequest request, TotalCaptureResult result) {
+                    captureImage();
+                }
+
+                @Override
+                public void onCaptureFailed(CameraCaptureSession session, CaptureRequest request, CaptureFailure failure) {
+                    super.onCaptureFailed(session, request, failure);
+                    Log.e(getString(R.string.LOG_TAG), "capture failed");
+                }
+            }, backgroundHandler);
+        } catch (CameraAccessException e) {
+            e.printStackTrace();
+        }
+    }
+
+    /*
+    we prepare the request for the capture: output is reader, flash is on when required, we set the rotation for the image, the effect
+    when the request is ready we stop the preview and ask for capture
+    after the capture is done we restart the preview and further build our imageSaver
+
+    */
     private void captureImage() {
         try {
             CaptureRequest.Builder captureStillBuilder = device.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE);
@@ -510,6 +511,18 @@ public class MainActivity extends AppCompatActivity {
                 }
             }, backgroundHandler);
             Log.i(getString(R.string.LOG_TAG), "picture taken");
+        } catch (CameraAccessException e) {
+            e.printStackTrace();
+        }
+    }
+
+    /*
+    stops the preview
+     */
+    private void stopPreview() {
+        try {
+            captureSession.stopRepeating();
+            Log.i(getString(R.string.LOG_TAG), "preview stopped");
         } catch (CameraAccessException e) {
             e.printStackTrace();
         }
