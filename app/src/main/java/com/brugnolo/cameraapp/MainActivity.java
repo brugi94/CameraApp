@@ -34,6 +34,7 @@ import android.view.TextureView;
 import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
+import android.widget.Button;
 import android.widget.Toast;
 
 import java.io.File;
@@ -55,6 +56,7 @@ public class MainActivity extends AppCompatActivity {
     private CaptureRequest previewCaptureRequest;
     private CaptureRequest.Builder builder;
     private CameraCaptureSession captureSession;
+    private Button mSettingButton;
 
     private static TextureView preview;
     private static Size previewSize;
@@ -93,6 +95,14 @@ public class MainActivity extends AppCompatActivity {
         Intent i = getIntent();
         format = i.getIntExtra(getString(R.string.FORMAT_TAG), ImageFormat.JPEG);
         effect = i.getIntExtra(getString(R.string.EFFECT_TAG), -1);
+        mSettingButton = (Button)findViewById(R.id.btn_settings);
+        mSettingButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                Intent mIntent= new Intent(getApplicationContext(), settingsActivity.class);
+                startActivity(mIntent);
+            }
+        });
 
     }
 

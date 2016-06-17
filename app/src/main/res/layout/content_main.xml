@@ -18,12 +18,20 @@
         android:layout_centerInParent="true" />
 
     <Button
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="@string/photo_button"
+        android:layout_width="@dimen/camera_side"
+        android:layout_height="@dimen/camera_side"
         android:id="@+id/pictureButton"
+        android:onClick="takePhoto"
+        android:background="@drawable/btn_camera"
         android:layout_alignParentBottom="true"
-        android:layout_centerHorizontal="true"
-        android:onClick="takePhoto"/>
+        android:layout_centerHorizontal="true" />
+
+    <Button
+        android:layout_width="@dimen/settings_side"
+        android:layout_height="@dimen/settings_side"
+        android:id="@+id/btn_settings"
+        android:background="@drawable/btn_settings"
+        android:layout_alignParentBottom="true"
+        android:layout_alignParentEnd="true" />
 
 </RelativeLayout>
