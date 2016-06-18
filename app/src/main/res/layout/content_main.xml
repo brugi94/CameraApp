@@ -21,7 +21,6 @@
         android:layout_width="@dimen/camera_side"
         android:layout_height="@dimen/camera_side"
         android:id="@+id/pictureButton"
-        android:onClick="takePhoto"
         android:background="@drawable/btn_camera"
         android:layout_alignParentBottom="true"
         android:layout_centerHorizontal="true" />

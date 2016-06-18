@@ -11,6 +11,7 @@ import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.view.View;
+import android.widget.Button;
 import android.widget.RadioButton;
 import android.widget.RadioGroup;
 import android.widget.Toast;
@@ -20,6 +21,9 @@ public class settingsActivity extends AppCompatActivity {
     private int MY_PERMISSIONS_REQUEST_CAMERA = 1;                        //IDs for the requests
     private int MY_PERMISSIONS_REQUEST_WRITE_EXTERNAL_STORAGE = 2;
     private int MY_PERMISSIONS_REQUEST_READ_EXTERNAL_STORAGE = 3;
+    private Button mSwitchToPreviewButton;
+    private Button mRAWButton;
+    private Button mJPEGButton;
 
     @Override
     /*
@@ -50,6 +54,30 @@ public class settingsActivity extends AppCompatActivity {
         } else {
             setRaw();
         }
+
+        mSwitchToPreviewButton = (Button)findViewById(R.id.switchToPreviewButton);
+        mSwitchToPreviewButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                startCamera(v);
+            }
+        });
+
+        mRAWButton = (Button)findViewById(R.id.RawRadio);
+        mRAWButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                clickRaw(v);
+            }
+        });
+
+        mJPEGButton = (Button)findViewById(R.id.JPEGRadio);
+        mJPEGButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                clickJPEG(v);
+            }
+        });
     }
 
     /*

@@ -94,6 +94,9 @@ public class ImageSaver implements Runnable {
                 break;
             }
             case ImageFormat.RAW_SENSOR: {
+
+                if(captureResult==null){Log.e("Luca","CaptureResult=null");}
+                if(cameraCharacteristics==null){Log.e("Luca","cameraCharacteristics=null");}
                 DngCreator dngCreator = new DngCreator(cameraCharacteristics, captureResult);
                 addExtension("dng");
                 try {

@@ -57,6 +57,8 @@ public class MainActivity extends AppCompatActivity {
     private CaptureRequest.Builder builder;
     private CameraCaptureSession captureSession;
     private Button mSettingButton;
+    private Button mTakePhotoButton;
+
 
     private static TextureView preview;
     private static Size previewSize;
@@ -95,6 +97,7 @@ public class MainActivity extends AppCompatActivity {
         Intent i = getIntent();
         format = i.getIntExtra(getString(R.string.FORMAT_TAG), ImageFormat.JPEG);
         effect = i.getIntExtra(getString(R.string.EFFECT_TAG), -1);
+
         mSettingButton = (Button)findViewById(R.id.btn_settings);
         mSettingButton.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -103,6 +106,16 @@ public class MainActivity extends AppCompatActivity {
                 startActivity(mIntent);
             }
         });
+
+
+        mTakePhotoButton = (Button)findViewById(R.id.pictureButton);
+        mTakePhotoButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                takePhoto(v);
+            }
+        });
+
 
     }
 
@@ -364,7 +377,7 @@ public class MainActivity extends AppCompatActivity {
                     new CaptureCallback() {
                         @Override
                         public void onCaptureCompleted(CameraCaptureSession session, CaptureRequest request, TotalCaptureResult result) {
-                            Log.i(getString(R.string.LOG_TAG), "preview started");
+                            //Log.i(getString(R.string.LOG_TAG), "preview refreshed");
                         }
                     },
                     backgroundHandler);
