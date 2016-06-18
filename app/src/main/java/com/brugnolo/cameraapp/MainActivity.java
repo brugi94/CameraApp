@@ -56,10 +56,6 @@ public class MainActivity extends AppCompatActivity {
     private CaptureRequest previewCaptureRequest;
     private CaptureRequest.Builder builder;
     private CameraCaptureSession captureSession;
-    private Button mSettingButton;
-    private Button mTakePhotoButton;
-
-
     private static TextureView preview;
     private static Size previewSize;
     private String cameraID;
@@ -93,22 +89,25 @@ public class MainActivity extends AppCompatActivity {
         requestWindowFeature(Window.FEATURE_NO_TITLE);
         getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
         setContentView(R.layout.activity_main);
-        preview = (TextureView) findViewById(R.id.previewView);
         Intent i = getIntent();
         format = i.getIntExtra(getString(R.string.FORMAT_TAG), ImageFormat.JPEG);
         effect = i.getIntExtra(getString(R.string.EFFECT_TAG), -1);
-
-        mSettingButton = (Button)findViewById(R.id.btn_settings);
+        preview = (TextureView) findViewById(R.id.previewView);
+        Button mSettingButton = (Button) findViewById(R.id.btn_settings);
+        assert mSettingButton != null;
         mSettingButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                Intent mIntent= new Intent(getApplicationContext(), settingsActivity.class);
+                //starts the settings activity and kills itself right after
+                Intent mIntent = new Intent(getApplicationContext(), settingsActivity.class);
                 startActivity(mIntent);
+                finish();
             }
         });
 
 
-        mTakePhotoButton = (Button)findViewById(R.id.pictureButton);
+        Button mTakePhotoButton = (Button) findViewById(R.id.pictureButton);
+        assert mTakePhotoButton != null;
         mTakePhotoButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -159,9 +158,13 @@ public class MainActivity extends AppCompatActivity {
                 new TextureView.SurfaceTextureListener() {
                     @Override
                     public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {
+                        //retrieves camera parameters
                         getCamera();
+                        //prepares output for image
                         setupReader();
+                        //modifies textureview (rotate ecc.)
                         configureTransform(width, height);
+                        //opens selected camera
                         openCamera();
                     }
 
@@ -192,14 +195,18 @@ public class MainActivity extends AppCompatActivity {
         CameraManager manager = (CameraManager) getSystemService(Context.CAMERA_SERVICE);
         if (cameraID == null || photoSize == null) {
             try {
+                //search all the cameras for the back one
                 for (String camera : manager.getCameraIdList()) {
                     CameraCharacteristics characteristics = manager.getCameraCharacteristics(camera);
                     if (characteristics.get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_FRONT) {
                         continue;
                     }
+                    //starts preparing the saver runnable
                     saver = new ImageSaver(getApplicationContext(), characteristics);//saver isn't already instantiated: if it was, photosize wouldnt be null, nor cameraID would be
                     StreamConfigurationMap map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
+                    //retrieves the output size for current format
                     photoSize = Collections.max(Arrays.asList(map.getOutputSizes(format)), new CompareSizesByArea());
+                    //finds best size for the preview
                     previewSize = getSize(map);
                     cameraID = camera;
                     return;
@@ -283,11 +290,14 @@ public class MainActivity extends AppCompatActivity {
             RectF dstRect = new RectF(0, 0, previewSize.getHeight(), previewSize.getWidth());
             float centerX = srcRect.centerX();
             float centerY = srcRect.centerY();
+            //rects set so they have the same center
             dstRect.offset(centerX - dstRect.centerX(), centerY - dstRect.centerY());
+            //scale srcRect to be equal to dstRect
             matrix.setRectToRect(srcRect, dstRect, Matrix.ScaleToFit.FILL);
             float scale = Math.max((float) viewWidth / previewSize.getWidth(),
                     (float) viewHeight / previewSize.getHeight());
             matrix.postScale(scale, scale, centerX, centerY);
+            //rotate accordingly to current screen rotation
             if (screenRotation == Surface.ROTATION_90) {
                 matrix.postRotate(-90, centerX, centerY);
             } else {
@@ -340,11 +350,13 @@ public class MainActivity extends AppCompatActivity {
         surfaceSettings.setDefaultBufferSize(previewSize.getWidth(), previewSize.getHeight());
         Surface previewSurface = new Surface(surfaceSettings);
         try {
+            //create preview request
             builder = device.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
             builder.addTarget(previewSurface);
             if (effect != -1) {
                 builder.set(CaptureRequest.CONTROL_EFFECT_MODE, effect);
             }
+            previewCaptureRequest = builder.build();
             device.createCaptureSession(Arrays.asList(previewSurface, reader.getSurface()),
                     new CameraCaptureSession.StateCallback() {
                         @Override
@@ -353,7 +365,6 @@ public class MainActivity extends AppCompatActivity {
                                 Log.e(getString(R.string.LOG_TAG), "camera device is null");
                                 return;
                             }
-                            previewCaptureRequest = builder.build();
                             captureSession = session;
                             startPreview();
                         }
@@ -374,13 +385,9 @@ public class MainActivity extends AppCompatActivity {
     private void startPreview() {
         try {
             captureSession.setRepeatingRequest(previewCaptureRequest,
-                    new CaptureCallback() {
-                        @Override
-                        public void onCaptureCompleted(CameraCaptureSession session, CaptureRequest request, TotalCaptureResult result) {
-                            //Log.i(getString(R.string.LOG_TAG), "preview refreshed");
-                        }
-                    },
+                    null,
                     backgroundHandler);
+            Log.i(getString(R.string.LOG_TAG), "preview started");
         } catch (CameraAccessException e) {
             e.printStackTrace();
         }
@@ -460,7 +467,7 @@ public class MainActivity extends AppCompatActivity {
             saving = true;
             lockFocus();
         } else {
-            Toast.makeText(getApplicationContext(), "saving, wait a while", Toast.LENGTH_SHORT);
+            Toast.makeText(getApplicationContext(), "saving, wait a while", Toast.LENGTH_SHORT).show();
         }
     }
 
@@ -501,11 +508,15 @@ public class MainActivity extends AppCompatActivity {
     */
     private void captureImage() {
         try {
+            //create request for still capture
             CaptureRequest.Builder captureStillBuilder = device.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE);
+            //set output
             captureStillBuilder.addTarget(reader.getSurface());
+            //set flash
             captureStillBuilder.set(CaptureRequest.CONTROL_AE_MODE,
                     CaptureRequest.CONTROL_AE_MODE_ON_AUTO_FLASH);
             int JPEGRotation;
+            //set rotation
             switch (screenRotation) {
                 case Surface.ROTATION_0:
                     JPEGRotation = 90;
@@ -518,6 +529,7 @@ public class MainActivity extends AppCompatActivity {
                     JPEGRotation = 0;
             }
             captureStillBuilder.set(CaptureRequest.JPEG_ORIENTATION, JPEGRotation);
+            //set effect mode
             if (effect != -1) {
                 captureStillBuilder.set(CaptureRequest.CONTROL_EFFECT_MODE, effect);
             }

@@ -22,8 +22,8 @@ public class settingsActivity extends AppCompatActivity {
     private int MY_PERMISSIONS_REQUEST_WRITE_EXTERNAL_STORAGE = 2;
     private int MY_PERMISSIONS_REQUEST_READ_EXTERNAL_STORAGE = 3;
     private Button mSwitchToPreviewButton;
-    private Button mRAWButton;
-    private Button mJPEGButton;
+    private RadioButton mRAWButton;
+    private RadioButton mJPEGButton;
 
     @Override
     /*
@@ -32,13 +32,16 @@ public class settingsActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_settings);
+        mJPEGButton = (RadioButton) findViewById(R.id.JPEGRadio);
+        mSwitchToPreviewButton = (Button) findViewById(R.id.switchToPreviewButton);
+        mRAWButton = (RadioButton) findViewById(R.id.RawRadio);
         if (savedInstanceState != null) {
             switch (savedInstanceState.getInt(getString(R.string.FORMAT_TAG))) {
                 case R.integer.RADIO_RAW:
                     setRaw();
                     break;
                 case R.integer.RADIO_JPEG:
-                    ((RadioButton) findViewById(R.id.JPEGRadio)).toggle();
+                    mJPEGButton.toggle();
                     switch (savedInstanceState.getInt(getString(R.string.EFFECT_TAG))) {
                         case R.integer.RADIO_SEPIA:
                             ((RadioButton) findViewById(R.id.sepiaEffect)).toggle();
@@ -54,24 +57,18 @@ public class settingsActivity extends AppCompatActivity {
         } else {
             setRaw();
         }
-
-        mSwitchToPreviewButton = (Button)findViewById(R.id.switchToPreviewButton);
         mSwitchToPreviewButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 startCamera(v);
             }
         });
-
-        mRAWButton = (Button)findViewById(R.id.RawRadio);
         mRAWButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 clickRaw(v);
             }
         });
-
-        mJPEGButton = (Button)findViewById(R.id.JPEGRadio);
         mJPEGButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -84,28 +81,27 @@ public class settingsActivity extends AppCompatActivity {
     applies default settings
      */
     private void setRaw() {
+        mRAWButton.toggle();
         ((RadioButton) findViewById(R.id.normalEffect)).toggle();
-        ((RadioButton) findViewById(R.id.RawRadio)).toggle();
         setEnabled(R.id.effectsGroup, false);
     }
 
     /*
     listener for the raw radiobutton click: greys out the effects
      */
-    public void clickRaw(View view){
-        ((RadioButton) findViewById(R.id.normalEffect)).toggle();
-        setEnabled(R.id.effectsGroup, false);
+    public void clickRaw(View view) {
+        setRaw();
     }
 
     /*
     listener for the jpeg radiobutton click: turns normal the effects if they were greyed out
      */
-    public void clickJPEG(View view){
+    public void clickJPEG(View view) {
         setEnabled(R.id.effectsGroup, true);
     }
 
     /*
-    sets a radiogroup so that group.isEnabled() == value
+    sets a radiogroup so that for each child that belongs to group, child.isEnabled() == value
      */
     private void setEnabled(int group, boolean value) {
         RadioGroup effectGroup = (RadioGroup) findViewById(group);
@@ -159,8 +155,8 @@ public class settingsActivity extends AppCompatActivity {
             Intent i = new Intent(getApplicationContext(), MainActivity.class);
             i.putExtra(getString(R.string.EFFECT_TAG), effect);
             i.putExtra(getString(R.string.FORMAT_TAG), format);
-            i.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
             startActivity(i);
+            finish();
         } else {
             Toast.makeText(getApplicationContext(), "please grant permissions", Toast.LENGTH_LONG).show();
         }
@@ -200,8 +196,7 @@ public class settingsActivity extends AppCompatActivity {
      * @param permission the requested permission
      */
     private void requestPermission(String permission, int id) {
-        if ((Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) && (ContextCompat.checkSelfPermission(getApplicationContext(),
-                permission)) != PackageManager.PERMISSION_GRANTED) {
+        if ((Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) && (!checkPermission(permission))) {
             ActivityCompat.requestPermissions(this,
                     new String[]{permission},
                     id);

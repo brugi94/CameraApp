@@ -124,10 +124,9 @@ public class ImageSaver implements Runnable {
         if (success) {
             Log.i(appContext.getString(R.string.LOG_TAG), "image saved");
             MediaScannerConnection.scanFile(appContext, new String[]{fileToSave.getPath()},
-                /*mimeTypes*/null, new MediaScannerConnection.MediaScannerConnectionClient() {
+                    null, new MediaScannerConnection.MediaScannerConnectionClient() {
                         @Override
                         public void onMediaScannerConnected() {
-                            // Do nothing
                         }
 
                         @Override
@@ -138,6 +137,9 @@ public class ImageSaver implements Runnable {
         }
     }
 
+    /**
+     * @param extension the extension that will be added to the file name
+     */
     private void addExtension(String extension) {
         String path = fileToSave.getAbsolutePath();
         path += "." + extension;
