@@ -227,7 +227,7 @@ public class MainActivity extends AppCompatActivity {
         List<Size> notBigEnough = new ArrayList<>();
         Size[] choices = map.getOutputSizes(SurfaceTexture.class);
         for (Size option : choices) {
-            if (option.getWidth() >= preview.getWidth() && option.getHeight() >= preview.getHeight() && ((float) preview.getWidth() / (float) preview.getHeight()) < 1.4F) {
+            if (option.getWidth() >= preview.getWidth() && option.getHeight() >= preview.getHeight() && ((float) preview.getWidth() / (float) preview.getHeight()) < 1.4F && ((float) preview.getWidth() / (float) preview.getHeight()) > 1.3F) {
                 bigEnough.add(option);
             } else {
                 notBigEnough.add(option);
