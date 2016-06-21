@@ -271,7 +271,6 @@ public class MainActivity extends AppCompatActivity {
     private void saveImage() {
         backgroundHandler.post(saver);
         saving = false;
-        Log.i(getString(R.string.LOG_TAG),"saveImage");
     }
 
     /*
