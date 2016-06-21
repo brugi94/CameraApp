@@ -261,9 +261,7 @@ public class MainActivity extends AppCompatActivity {
                 File image = new File(galleryFolder, imageFileName);
                 saver.setFileToSave(image);
                 saver.setImageToSave(imageToSave);
-                if (saver.isCompleted()) {
-                    saveImage();
-                }
+                saveImage();
             }
         }, backgroundHandler);
     }
@@ -546,9 +544,7 @@ public class MainActivity extends AppCompatActivity {
                 public void onCaptureCompleted(CameraCaptureSession session, CaptureRequest request, TotalCaptureResult result) {
                     Log.i(getString(R.string.LOG_TAG), "capture completed");
                     saver.setCaptureResult(result);
-                    if (saver.isCompleted()) {
-                        saveImage();
-                    }
+                    saveImage();
                     startPreview();
                 }
             }, backgroundHandler);
