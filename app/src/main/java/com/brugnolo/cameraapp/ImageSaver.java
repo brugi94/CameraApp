@@ -143,7 +143,7 @@ public class ImageSaver implements Runnable {
      * @return true if it's possible to save, false otherwise
      */
     public boolean isCompleted() {
-        return (imageToSave == null && captureResult == null);
+        return !(imageToSave == null && captureResult == null);
     }
 
     /**
