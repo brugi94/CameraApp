@@ -65,7 +65,9 @@ public class ImageSaver implements Runnable {
     public void setCaptureResult(CaptureResult result) {
         captureResult = result;
     }
-
+/*
+* saves imageToSave to the app folder
+*/
     @Override
     public void run() {
         synchronized (this) {
@@ -130,7 +132,7 @@ public class ImageSaver implements Runnable {
             }
             captureResult = null;
             imageToSave = null;
-            // If saving the file succeeded, update MediaStore.
+            // If saving the file succeeded, update gallery.
             if (success) {
                 Log.i(appContext.getString(R.string.LOG_TAG), "image saved");
                 MediaScannerConnection.scanFile(appContext, new String[]{fileToSave.getPath()},
