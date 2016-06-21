@@ -261,9 +261,16 @@ public class MainActivity extends AppCompatActivity {
                 File image = new File(galleryFolder, imageFileName);
                 saver.setFileToSave(image);
                 saver.setImageToSave(imageToSave);
-                saving = false;
+                if (saver.isCompleted()) {
+                    saveImage();
+                }
             }
         }, backgroundHandler);
+    }
+
+    private void saveImage() {
+        backgroundHandler.post(saver);
+        saving = false;
     }
 
     /*
@@ -539,8 +546,8 @@ public class MainActivity extends AppCompatActivity {
                 public void onCaptureCompleted(CameraCaptureSession session, CaptureRequest request, TotalCaptureResult result) {
                     Log.i(getString(R.string.LOG_TAG), "capture completed");
                     saver.setCaptureResult(result);
-                    if (!backgroundHandler.post(saver)) {
-                        Log.e(getString(R.string.LOG_TAG), "failed to post runnable");
+                    if (saver.isCompleted()) {
+                        saveImage();
                     }
                     startPreview();
                 }

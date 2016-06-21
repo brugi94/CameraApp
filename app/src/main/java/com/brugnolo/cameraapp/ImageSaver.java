@@ -120,6 +120,8 @@ public class ImageSaver implements Runnable {
                 break;
             }
         }
+        captureResult = null;
+        imageToSave = null;
         // If saving the file succeeded, update MediaStore.
         if (success) {
             Log.i(appContext.getString(R.string.LOG_TAG), "image saved");
@@ -135,6 +137,13 @@ public class ImageSaver implements Runnable {
                         }
                     });
         }
+    }
+
+    /**
+     * @return true if it's possible to save, false otherwise
+     */
+    public boolean isCompleted() {
+        return (imageToSave == null && captureResult == null);
     }
 
     /**
